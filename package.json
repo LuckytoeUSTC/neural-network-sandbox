@@ -1,0 +1,13 @@
+{
+  "name": "neural-network-sandbox",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline neuroscience network sandbox",
+  "scripts": {
+    "test": "node tests/verify.cjs && node tests/verify-recording.cjs",
+    "test:release": "node tests/verify-release.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

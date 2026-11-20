@@ -1,0 +1,11 @@
+.test-output/
+__pycache__/
+*.pyc
+
+# Local workspace records and generated artifacts
+.openai/
+archive/
+research/
+node_modules/
+release/
+dist/vendor/
