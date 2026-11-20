@@ -299,11 +299,11 @@
         covCondition: "baseline", first: 0, last: result.config.total, firstLocked: true, covFirstLocked: true,
         covFirst: 0, covLast: result.config.total, covKind: result.baseline.spikes ? "spike" : "point",
         window: standardWindow, page: 0, selected: firstTarget ?? observed[0], edge: null, focusEdges: false,
-        groups: false, covariance: null, showInput: true, inputCell: recording.projected ? 0 : firstTarget,
+        groups: false, covariance: null, showInput: Boolean(result.input.length), inputVisibility: { baseline: false }, inputCell: recording.projected ? 0 : firstTarget,
         graphMode: result.input.length ? "stimulated" : "baseline", graphPoint: 0, graphPlaying: false, graphScales: new Map()
       };
       if (previousState) {
-        for (const key of ["condition", "activityCondition", "covCondition", "firstLocked", "covFirstLocked", "showInput", "graphMode", "focusEdges", "groups"]) viewState[key] = previousState[key];
+        for (const key of ["condition", "activityCondition", "covCondition", "firstLocked", "covFirstLocked", "showInput", "inputVisibility", "graphMode", "focusEdges", "groups"]) viewState[key] = previousState[key];
         const snap = value => Math.max(0, Math.min(result.config.total, Math.round(value / sample) * sample));
         for (const [a, b] of [["first", "last"], ["covFirst", "covLast"]]) {
           const full = previousState[a] === 0 && previousState[b] === previousConfig.total;
@@ -343,14 +343,24 @@
     else void runExperiment(readForm());
   });
 
+  const compareTab = $("views").querySelector('[data-view="compare"]');
+  function clearCompareNotice() {
+    compareTab.classList.remove("reference-new", "reference-pulse");
+    compareTab.removeAttribute("aria-description");
+  }
+  compareTab.addEventListener("animationend", () => compareTab.classList.remove("reference-pulse"));
   $("pin-reference").addEventListener("click", () => {
     if (reference && (view === "compare" || view === (compareState.view || "connectivity"))) {
-      reference = null; compareState = {}; renderView(); return;
+      reference = null; compareState = {}; clearCompareNotice(); renderView(); return;
     }
     if (controller || observationController || !result) return;
     reference = structuredClone({ result, observed, recording });
     compareState = { view, condition: viewState.condition, graphMode: viewState.graphMode, time: viewState.graphPoint * result.config.sample, first: viewState.first, last: viewState.last, showInput: viewState.showInput, inputCell: viewState.inputCell, referenceIds: viewState.traceIds || observed.slice(0, 8), referenceNode: viewState.selected, focusEdges: viewState.focusEdges };
     renderView();
+    compareTab.classList.remove("reference-pulse");
+    void compareTab.offsetWidth;
+    compareTab.classList.add("reference-new", "reference-pulse");
+    compareTab.setAttribute("aria-description", "Reference available for comparison");
 
   });
 
@@ -415,6 +425,7 @@
 
   function updateView(key, value, focus) {
     viewState[key] = value;
+    if (key === "condition") viewState.showInput = viewState.inputVisibility[value] ?? (value !== "baseline");
     if (view === "covariance") {
       viewState.covariance?.controller?.abort();
       viewState.covariance = null;
@@ -613,6 +624,7 @@
     {
       const toggle = tool(viewState.showInput ? "Hide stimulus" : "Show stimulus", () => {
         viewState.showInput = !viewState.showInput;
+        viewState.inputVisibility[viewState.condition] = viewState.showInput;
       globalThis.NeuroUI.iconize(toggle, viewState.showInput ? "stimulus" : "stimulusOff", viewState.showInput ? "Hide stimulus" : "Show stimulus");
         toggle.setAttribute("aria-pressed", String(viewState.showInput));
         if ($("input-cell")) $("input-cell").disabled = !viewState.showInput;
@@ -1121,7 +1133,7 @@
       // These explicit commands also work from a field, without reloading the page.
       event.preventDefault();
       if (event.repeat || event.isComposing || composing || event.keyCode === 229 || document.querySelector("dialog[open]")) return;
-      if (event.key === "F9") { void runExperiment(readForm()); return; }
+      if (event.key === "F9") { $("seed-noise").click(); return; }
       const topology = $("topology").value;
       if (topology === "custom") { message("Custom connectivity is fixed. Edit the matrix to change its connections."); return; }
       if (["ring", "chain"].includes(topology) && Number($("jitter").value) === 0) {

@@ -35,11 +35,11 @@
     </div></div>
           <label class="preset-label" for="preset">Preset</label>
           <select id="preset" aria-label="Network preset"></select>
-          <div class="run-area"><button id="run" class="primary" type="submit" aria-keyshortcuts="Shift+Enter F9">Run current settings</button><p id="run-summary"></p><p id="message" role="status" aria-live="polite"></p></div>
+          <div class="run-area"><button id="run" class="primary" type="submit" aria-keyshortcuts="Shift+Enter">Run current settings</button><p id="run-summary"></p><p id="message" role="status" aria-live="polite"></p></div>
           </div>
           <div class="settings-body"><section class="control-section"><h3>Neuron model</h3><div id="model-fields" class="field-grid"></div></section>
           <details class="control-section" open><summary>Network</summary><div id="network-fields" class="field-grid"></div><button id="seed-network" class="seed-button" type="button" aria-keyshortcuts="F5">Resample network ↻</button></details>
-          <details class="control-section"><summary>Input &amp; stimulus</summary><div id="input-fields" class="field-grid"></div><button id="seed-noise" class="seed-button" type="button">Resample noise ↻</button></details>
+          <details class="control-section"><summary>Input &amp; stimulus</summary><div id="input-fields" class="field-grid"></div><button id="seed-noise" class="seed-button" type="button" aria-keyshortcuts="F9">Resample noise ↻</button></details>
           <details class="control-section"><summary>Simulation</summary><div id="time-fields" class="field-grid"></div></details>
           <details class="control-section" open><summary>Recording</summary><div id="observe-fields" class="field-grid"></div><button id="seed-observe" class="seed-button" type="button">Resample readout ↻</button><button id="save-readout" class="seed-button" type="button" disabled>Export readout matrix</button></details>
           </div>
@@ -82,17 +82,13 @@
   <dialog id="shortcuts-dialog" aria-labelledby="shortcuts-title">
     <h2 id="shortcuts-title">Keyboard shortcuts</h2>
     <dl class="shortcut-list">
-      <div><dt><kbd>Shift</kbd> + <kbd>Enter</kbd></dt><dd>Run the experiment</dd></div>
+      <div><dt><kbd>Shift</kbd> + <kbd>Enter</kbd></dt><dd>Resample noise and run</dd></div>
       <div><dt><kbd>B</kbd> / <kbd>N</kbd></dt><dd>Previous / next result tab</dd></div>
-      <div><dt><kbd>Esc</kbd></dt><dd>Exit Nodes full screen</dd></div>
       <div><dt><kbd>?</kbd></dt><dd>Open this guide</dd></div>
-      <div><dt><kbd>Tab</kbd> / <kbd>Shift</kbd> + <kbd>Tab</kbd></dt><dd>Move between controls</dd></div>
-      <div><dt><kbd>Enter</kbd> / <kbd>Space</kbd></dt><dd>Activate the focused button</dd></div>
       <div><dt><kbd>F5</kbd></dt><dd>Resample connectivity and run</dd></div>
-      <div><dt><kbd>F9</kbd></dt><dd>Run the experiment</dd></div>
+      <div><dt><kbd>F9</kbd></dt><dd>Resample noise and run</dd></div>
     </dl>
-    <p>F5 and F9 work from fields and charts. Shift + Enter also runs from selects and single-line inputs; multiline editing keeps its native keys. B/N pauses while editing fields or interacting with charts. App shortcuts pause during text composition and dialogs.</p>
-    <p>F5 changes only the network seed. Custom matrices and deterministic connectivity cannot be resampled. Use the browser's Reload command to reload the page.</p>
+    <p>F5 resamples connectivity. F9 resamples noise. Both rerun the experiment, keeping the other settings unchanged.</p>
     <form method="dialog"><button class="tool" type="submit">Close</button></form>
   </dialog>
 </body>

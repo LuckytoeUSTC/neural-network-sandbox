@@ -425,3 +425,16 @@ main { padding: 0 24px 16px; }
 .view-controls .transport-placeholder { visibility: hidden; }
 .view-controls [data-cmp-focus="view"] { width: 148px; flex: 0 0 148px; }
 .view-controls [data-cmp-focus="activity"], .view-controls [data-cmp-focus="condition"] { width: 180px; flex: 0 0 180px; }
+
+/* A newly pinned reference calls attention without changing tab geometry. */
+#views [data-view="compare"].reference-new {
+  background: #e8f0ff; color: #214fbd;
+}
+#views [data-view="compare"].reference-pulse { animation: reference-arrived 650ms ease-in-out 2; }
+@keyframes reference-arrived {
+  0%, 100% { background-color: #e8f0ff; }
+  50% { background-color: #b9d0ff; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #views [data-view="compare"].reference-pulse { animation: none; }
+}

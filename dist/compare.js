@@ -52,6 +52,7 @@
     function update(key, value) {
       if (["view", "graphMode"].includes(key)) state.playing = false;
       state[key] = value;
+      if (key === "condition") state.showInput = value !== "baseline";
       if (key === "view") onViewChange?.();
       draw();
     }
