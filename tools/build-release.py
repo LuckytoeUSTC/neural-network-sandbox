@@ -32,7 +32,7 @@ def build(mathjax_root, output):
             if relative == "local-mathjax.js":
                 data = data.replace(b"D:\\\\MathJax", b"vendor/mathjax")
             files["vendor/mathjax/" + relative] = data
-    files["THIRD_PARTY_NOTICES.md"] = (ROOT / "THIRD_PARTY_NOTICES.md").read_bytes()
+    files["LICENSE"] = (ROOT / "LICENSE").read_bytes()
     files["START_HERE.txt"] = (
         "Neural network sandbox / 神经网络沙盒\n\n"
         "解压整个文件夹，然后用 Chrome 或 Edge 打开 index.html。\n"
@@ -42,6 +42,7 @@ def build(mathjax_root, output):
         "Do not open the HTML inside the ZIP preview or move it away from its companion files.\n"
         "No installation, server or internet connection is needed. Export results before closing.\n"
         "Source: https://github.com/LuckytoeUSTC/neural-network-sandbox\n"
+        "Project source: MIT License (LICENSE). Bundled MathJax and fonts retain their own licenses under vendor/mathjax.\n"
     ).encode("utf-8")
     manifest = {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}
     files["SHA256SUMS.json"] = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8")
