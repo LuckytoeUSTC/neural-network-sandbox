@@ -2,12 +2,12 @@
   "use strict";
 
   // Comparison is a view over completed runs. It never simulates or edits a run.
-  function render({ root, controls, reference, current, state = {}, labels = {}, onExportReference, onInfo, onViewChange }) {
+  function render({ root, controls, reference, current, state = {}, labels = {}, gifFrameInterval = () => 20, onExportReference, onInfo, onViewChange }) {
     const V = globalThis.NeuroViz, M = globalThis.NeuroModel, UI = globalThis.NeuroUI;
     const charts = new Set();
     let disposed = false, events = null;
     let sharedValueRange, timeRange, duration = 0, timeStep = 1, playback = 0, playButton, timeDisplay;
-    let graphUpdates = [], colorScales = {};
+    let graphUpdates = [], graphExports = [], colorScales = {};
     const scaleCache = new Map();
     let additionalInfo = "";
     root.classList.add("neuro-compare");
@@ -202,7 +202,7 @@
       const origin = state.time, began = performance.now();
       const next = now => {
         if (disposed || !state.playing) return;
-        const time = origin + Math.max(0, now - began) * duration / 4500;
+        const time = origin + Math.max(0, now - began) * (state.playbackSpeed || 1);
         if (time >= duration) { state.time = 0; state.playing = false; playbackLabel(); refreshActivity(); playback = 0; return; }
         state.time = Number((Math.floor(time / timeStep) * timeStep).toFixed(8));
         refreshActivity(); playback = requestAnimationFrame(next);
@@ -302,6 +302,7 @@
           canvas.id = "cmp-" + side + "-graph";
         }
         attach(graph, plots);
+        graphExports.push({ graph, title: `${title} · ${state.graphMode === "delta" ? "Difference" : state.graphMode === "baseline" ? "Baseline" : "Stimulus"}`, center, scale, unit: config.model === "lif" ? "mV" : "" });
         {
           const probe = V.fieldsReadout(["Neuron", config.model === "lif" ? "V (mV)" : "Activity"]);
           V.linkProbe(graph, probe);
@@ -315,7 +316,7 @@
       if (disposed) return;
       const active = document.activeElement;
       const restore = focusKey ?? (root.contains(active) || controls?.contains(active) ? active?.dataset.cmpFocus : null);
-      cancelAnimationFrame(playback); graphUpdates = []; playButton = null; timeDisplay = null;
+      cancelAnimationFrame(playback); graphUpdates = []; graphExports = []; playButton = null; timeDisplay = null;
       UI.closeInfo();
       clearCharts();
       events?.abort();
@@ -342,7 +343,21 @@
           const transport = el("div", undefined, "cmp-transport");
           playButton = button("", () => { state.playing = !state.playing; playbackLabel(); if (state.playing) startPlayback(); else cancelAnimationFrame(playback); }, "play");
           timeDisplay = el("output", `${V.number(state.time, 8)} ms`, "cmp-time"); timeDisplay.setAttribute("aria-label", "Comparison time");
-          playbackLabel(); transport.append(playButton, timeDisplay); toolbar.append(transport);
+          const gif = NeuroGIF.control({
+            filename: "comparison-activity.gif", signal: events.signal, plan: () => NeuroGIF.framePlan(duration, gifFrameInterval(), timeStep, state.playbackSpeed || 1),
+            beforeStart: () => { state.playing = false; cancelAnimationFrame(playback); playbackLabel(); },
+            renderFrame: fraction => {
+              const previous = state.time;
+              try {
+                state.time = fraction * duration;
+                return NeuroGIF.compose(graphExports.map(({graph, ...item}) => ({ ...item, canvas: graph.capture(440, 360) })), state.time);
+              } finally { state.time = previous; }
+            },
+            onError: error => UI.showInfo("GIF export", error.message)
+          });
+          gif.dataset.cmpFocus = "gif";
+          const speed = UI.speedControl(state.playbackSpeed || 1, value => { state.playbackSpeed = value; if (state.playing) startPlayback(); });
+          playbackLabel(); transport.append(gif, speed, playButton, timeDisplay); toolbar.append(transport);
           if (state.graphMode === "structure") { transport.style.visibility = "hidden"; playButton.disabled = true; }
         }
       } else {

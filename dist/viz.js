@@ -145,6 +145,13 @@
     };
     frame.refresh = schedule;
     frame.paintNow = redraw;
+    frame.capture = (width = 640, height = 420) => {
+      if (disposed) throw new DOMException("The plot was closed.", "AbortError");
+      const snapshot = document.createElement("canvas"); snapshot.width = width; snapshot.height = height;
+      const ctx = snapshot.getContext("2d"); ctx.fillStyle = paper; ctx.fillRect(0, 0, width, height);
+      ctx.save(); render(ctx, width, height); ctx.restore();
+      return snapshot;
+    };
     if (inspect) {
       for (const action of ["pointermove", "pointerdown", "keydown"]) {
         canvas.addEventListener(action, event => {
@@ -404,14 +411,19 @@
     updateProbe(...selection);
     let scale = colorScale ?? 0;
     if (colorScale === undefined) for (const row of data) for (const entry of row) scale = Math.max(scale, Math.abs(entry));
+    const raster = document.createElement("canvas"); raster.width = n; raster.height = n;
+    const pixels = raster.getContext("2d").createImageData(n, n);
+    for (let to = 0; to < n; to++) for (let from = 0; from < n; from++) {
+      const value = data[to][from], amount = scale ? Math.min(1, Math.abs(value) / scale) : 0;
+      const tone = value < 0 ? [178, 75, 49] : [9, 102, 84], base = [246, 248, 240], offset = (to * n + from) * 4;
+      for (let c = 0; c < 3; c++) pixels.data[offset + c] = Math.round(base[c] + (tone[c] - base[c]) * amount);
+      pixels.data[offset + 3] = 255;
+    }
+    raster.getContext("2d").putImageData(pixels, 0, 0);
     const frame = chart(title, height, (ctx, w, h) => {
       const size = Math.min(w - 52, h - 72), left = (w - size) / 2, top = 18, c = size / n;
-      for (let to = 0; to < n; to++) {
-        for (let from = 0; from < n; from++) {
-          ctx.fillStyle = heat(data[to][from], scale);
-          ctx.fillRect(left + from * c, top + to * c, c + 0.35, c + 0.35);
-        }
-      }
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(raster, left, top, size, size);
       if (selection) {
         ctx.strokeStyle = "#087f79";
         ctx.lineWidth = 2.5;
@@ -489,17 +501,25 @@
     });
   }
 
-  function graph({ result, observed, selected, select, onlySelected, activity, scale = 1 }) {
+  const graphNetworks = new WeakMap();
+  function graph({ result, observed, selected, select, onlySelected, activity, scale = 1, positions: initialPositions = null }) {
     const { network, config, input } = result;
     const { n, topology } = config, observedSet = new Set(observed), targets = new Set(input.flatMap(item => item.cells));
+    let cached = graphNetworks.get(network);
+    if (!cached) {
+      const overview = network.edges.length > 130 ? [...network.edges].sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 100) : network.edges;
+      const groups = network.groupNames.map(() => []);
+      for (const id of network.order) groups[network.group[id]].push(id);
+      cached = { overview, groups }; graphNetworks.set(network, cached);
+    }
     const dense = network.edges.length > 130;
     const edges = onlySelected && selected !== null ? network.edges.filter(edge => edge.from === selected || edge.to === selected) :
-      (dense ? [...network.edges].sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 100) : network.edges);
+      cached.overview;
     const adjacent = new Set(edges.flatMap(edge => edge.from === selected ? [edge.to] : edge.to === selected ? [edge.from] : []));
     const title = "Nodes";
     const height = topology === "chain" ? Math.min(390, Math.max(156, Math.ceil(n / 10) * 56 + 44)) : 390;
-    const groups = network.groupNames.map((_, i) => network.order.filter(id => network.group[id] === i));
-    let layout = null;
+    const groups = cached.groups;
+    let layout = null, customPositions = initialPositions, transition = 0;
     // Topology is fixed for this chart. Only a resize invalidates its layout.
     function geometry(w, h) {
       if (layout?.width === w && layout.height === h) return layout;
@@ -508,6 +528,7 @@
       const columns = Math.min(n, Math.max(4, Math.floor(w / 36)));
       const nodeR = topology === "chain" && n > 1 ? Math.min(baseRadius, Math.max(4, (w - 58) / (columns - 1) * .29)) : baseRadius;
       const positions = network.order.map((cell, i) => {
+        if (customPositions) return [customPositions[cell][0] * w, customPositions[cell][1] * h];
         if (topology === "chain" && n > 1) {
           const columns = Math.min(n, Math.max(4, Math.floor(w / 36))), rows = Math.ceil(n / columns);
           const row = Math.floor(i / columns), column = row % 2 ? columns - 1 - i % columns : i % columns;
@@ -582,6 +603,26 @@
       const picked = geometry.positions.findIndex(([x, y]) => Math.hypot(x - event.offsetX, y - event.offsetY) <= geometry.nodeR + 6);
       if (picked !== -1) select(picked, true);
     });
+    frame.normalizedPositions = () => {
+      const { width, height } = frame.querySelector("canvas").getBoundingClientRect();
+      return geometry(width, height).positions.map(([x, y]) => [x / width, y / height]);
+    };
+    frame.setPositions = (target, animate = true) => {
+      cancelAnimationFrame(transition);
+      const from = frame.normalizedPositions();
+      customPositions = target; layout = null;
+      const to = frame.normalizedPositions(), began = performance.now();
+      const duration = animate && !matchMedia("(prefers-reduced-motion: reduce)").matches ? 700 : 0;
+      const tick = now => {
+        const t = duration ? Math.max(0, Math.min(1, (now - began) / duration)) : 1, eased = t * t * (3 - 2 * t);
+        customPositions = t === 1 ? target : from.map(([x, y], i) => [x + (to[i][0] - x) * eased, y + (to[i][1] - y) * eased]);
+        layout = null; frame.refresh();
+        if (t < 1) transition = requestAnimationFrame(tick);
+      };
+      transition = requestAnimationFrame(tick);
+    };
+    const dispose = frame.dispose;
+    frame.dispose = () => { cancelAnimationFrame(transition); dispose(); };
     frame.edgeSummary = `Showing ${edges.length} of ${network.edges.length} connections across ${n} neurons. ` +
       (onlySelected ? "Only the selected neuron's connections are shown. " : dense ? "Overview keeps the strongest connections by absolute weight. " : "") +
       "Arrows point from source to target.";

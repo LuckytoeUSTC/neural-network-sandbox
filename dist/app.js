@@ -50,6 +50,12 @@
       ["observe", "Recorded IDs", "manual wide"], ["observeSeed", "Readout seed", "randomObs wide"]
     ]
   };
+  const gifLabel = document.createElement("label"); gifLabel.className = "wide";
+  const gifTitle = document.createElement("span"); gifTitle.textContent = "GIF frame interval (sim. ms)";
+  const gifInterval = document.createElement("input"); gifInterval.id = "gif-frame-interval"; gifInterval.type = "number"; gifInterval.min = .1; gifInterval.max = 20000; gifInterval.step = "any"; gifInterval.value = 20;
+  gifInterval.title = "Simulated time between GIF frames. Rounded up to a saved-sample interval. Does not change simulation or CSV data. For intervals below 20 ms, slow playback down before export.";
+  gifInterval.addEventListener("blur", () => { if (!gifInterval.value) gifInterval.value = 20; });
+  gifLabel.append(gifTitle, gifInterval);
   const observationKeys = new Set(["observeMode", "m", "group", "observe", "observeSeed"]);
   const fieldLabels = Object.fromEntries(Object.values(fields).flat().map(([key, label]) => [key, label]));
   let result = null, recording = null, observed = [], observationController = null, view = "traces", controller = null, revision = 0, activePreset = "ring", dirty = false;
@@ -227,6 +233,8 @@
     message(); runButton(Boolean(controller));
   }
 
+  $("time-fields").append(gifLabel);
+
   $("settings").addEventListener("input", event => {
     if (slots.has(event.target.id)) changed(event.target);
   });
@@ -303,7 +311,7 @@
         graphMode: result.input.length ? "stimulated" : "baseline", graphPoint: 0, graphPlaying: false, graphScales: new Map()
       };
       if (previousState) {
-        for (const key of ["condition", "activityCondition", "covCondition", "firstLocked", "covFirstLocked", "showInput", "inputVisibility", "graphMode", "focusEdges", "groups"]) viewState[key] = previousState[key];
+        for (const key of ["condition", "activityCondition", "covCondition", "firstLocked", "covFirstLocked", "showInput", "inputVisibility", "playbackSpeed", "graphMode", "focusEdges", "groups"]) viewState[key] = previousState[key];
         const snap = value => Math.max(0, Math.min(result.config.total, Math.round(value / sample) * sample));
         for (const [a, b] of [["first", "last"], ["covFirst", "covLast"]]) {
           const full = previousState[a] === 0 && previousState[b] === previousConfig.total;
@@ -355,7 +363,7 @@
     }
     if (controller || observationController || !result) return;
     reference = structuredClone({ result, observed, recording });
-    compareState = { view, condition: viewState.condition, graphMode: viewState.graphMode, time: viewState.graphPoint * result.config.sample, first: viewState.first, last: viewState.last, showInput: viewState.showInput, inputCell: viewState.inputCell, referenceIds: viewState.traceIds || observed.slice(0, 8), referenceNode: viewState.selected, focusEdges: viewState.focusEdges };
+    compareState = { view, condition: viewState.condition, graphMode: viewState.graphMode, time: viewState.graphPoint * result.config.sample, playbackSpeed: viewState.playbackSpeed || 1, first: viewState.first, last: viewState.last, showInput: viewState.showInput, inputCell: viewState.inputCell, referenceIds: viewState.traceIds || observed.slice(0, 8), referenceNode: viewState.selected, focusEdges: viewState.focusEdges };
     renderView();
     compareTab.classList.remove("reference-pulse");
     void compareTab.offsetWidth;
@@ -881,6 +889,7 @@
     }
     const scale = viewState.graphScales.get(viewState.graphMode);
     const graph = V.graph({ result, observed: recording.projected ? [] : observed, selected, onlySelected: viewState.focusEdges, activity, scale,
+      positions: nodesExpanded && viewState.forceEnabled ? viewState.forcePositions : null,
       select: (cell, focusGraph) => selectNode(cell, focusGraph ? "graph" : null) });
     graph.classList.add("nodes-card");
     attach(graph, grid);
@@ -935,6 +944,8 @@
 
   function configureNodes(graph, center, scale, shade) {
     const UI = globalThis.NeuroUI, { config, baseline } = result;
+    const lifetime = new AbortController(), dispose = graph.dispose;
+    graph.dispose = () => { lifetime.abort(); dispose(); };
     const heading = graph.querySelector("h3"); heading.classList.add("nodes-heading");
     const title = document.createElement("span"); title.className = "nodes-title"; title.append("Nodes");
     const about = document.createElement("button"); about.type = "button"; about.className = "icon-button info-button";
@@ -999,7 +1010,25 @@
       const play = document.createElement("button"); play.type = "button"; play.id = "nodes-play";
       const transport = document.createElement("span"); transport.className = "nodes-transport";
       if (!timeReadout) { timeReadout = document.createElement("output"); timeReadout.id = "nodes-time-value"; }
-      transport.append(play, timeReadout);
+      const gif = NeuroGIF.control({
+        filename: "nodes-activity.gif", signal: lifetime.signal, plan: () => NeuroGIF.framePlan(config.total, Number(gifInterval.value), config.sample, viewState.playbackSpeed || 1),
+        beforeStart: () => { viewState.graphPlaying = false; cancelAnimationFrame(animation); animation = 0; label(); },
+        renderFrame: fraction => {
+          const previous = viewState.graphPoint;
+          const point = Math.round(fraction * (baseline.points - 1));
+          try {
+            viewState.graphPoint = point;
+            return NeuroGIF.compose([{ canvas: graph.capture(640, 420), title: `Nodes · ${levels[viewState.graphMode] || viewState.graphMode}`, center, scale, unit: config.model === "lif" ? "mV" : "" }], point * config.sample);
+          } finally { viewState.graphPoint = previous; }
+        },
+        onError: error => UI.showInfo("GIF export", error.message)
+      });
+      gif.id = "nodes-gif";
+      const speed = UI.speedControl(viewState.playbackSpeed || 1, value => {
+        viewState.playbackSpeed = value;
+        if (viewState.graphPlaying) { cancelAnimationFrame(animation); start(); }
+      });
+      transport.append(gif, speed, play, timeReadout);
       if (!shade) { transport.style.visibility = "hidden"; play.disabled = true; }
       const probe = nodesExpanded ? null : V.fieldsReadout(["Time", "Neuron", config.model === "lif" ? "V (mV)" : "Activity"]);
       if (probe) V.linkProbe(graph, probe);
@@ -1021,8 +1050,9 @@
         const index = viewState.graphPoint, began = performance.now();
         const next = now => {
           if (!viewState.graphPlaying || !graph.isConnected) return;
-          const point = index + Math.floor(Math.max(0, now - began) * baseline.points / 4500);
-          if (point >= baseline.points) { viewState.graphPlaying = false; animation = 0; setPoint(0); label(); return; }
+          const elapsed = index * config.sample + Math.max(0, now - began) * (viewState.playbackSpeed || 1);
+          const point = Math.min(baseline.points - 1, Math.floor(elapsed / config.sample));
+          if (elapsed >= config.total) { viewState.graphPlaying = false; animation = 0; setPoint(0); label(); return; }
           setPoint(point);
           animation = requestAnimationFrame(next);
         };
@@ -1038,6 +1068,22 @@
       });
       label(); setPoint(viewState.graphPoint); if (shade && viewState.graphPlaying) start();
       actions.prepend(transport);
+    }
+    if (nodesExpanded) {
+      const layout = document.createElement("button"); layout.type = "button"; layout.id = "nodes-layout";
+      const label = () => { UI.iconize(layout, "layout", viewState.forceEnabled ? "Restore ordered layout" : "Relax layout by connection strength"); layout.setAttribute("aria-pressed", String(Boolean(viewState.forceEnabled))); };
+      label();
+      layout.addEventListener("click", async () => {
+        if (viewState.forceEnabled) { viewState.forceEnabled = false; graph.setPositions(null); label(); return; }
+        layout.disabled = true; layout.setAttribute("aria-busy", "true");
+        try {
+          if (!viewState.forcePositions) viewState.forcePositions = await NeuroLayout.relax(result.network, graph.normalizedPositions(), lifetime.signal);
+          lifetime.signal.throwIfAborted();
+          viewState.forceEnabled = true; graph.setPositions(viewState.forcePositions); label();
+        } catch (error) { if (error.name !== "AbortError") message(error.message, "error"); }
+        finally { layout.disabled = false; layout.removeAttribute("aria-busy"); }
+      });
+      actions.append(layout);
     }
     actions.append(mode, expand); heading.replaceChildren(title, actions); heading.after(details);
     return scaleNote;
@@ -1095,7 +1141,7 @@
     if (view === "compare") {
       comparison = globalThis.NeuroCompare.render({
         root: $("viz-wrap"), reference, current: result ? { result, observed, recording } : null,
-        controls: $("view-controls"),
+        controls: $("view-controls"), gifFrameInterval: () => Number(gifInterval.value),
         onInfo: note, onViewChange: syncPin,
         state: compareState, labels: fieldLabels,
         onExportReference: () => {
@@ -1121,6 +1167,7 @@
   document.addEventListener("compositionend", () => { composing = false; }, true);
   addEventListener("blur", () => { composing = false; });
   document.addEventListener("keydown", event => {
+    if (event.key === "Tab") $("views").querySelectorAll(".shortcut-focus").forEach(tab => tab.classList.remove("shortcut-focus"));
     if (event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing && !composing && event.keyCode !== 229 && !document.querySelector("dialog[open]") && !event.target.closest?.("textarea, [contenteditable]:not([contenteditable='false'])")) {
       event.preventDefault();
       if (!event.repeat && !controller) void runExperiment(readForm());
@@ -1144,6 +1191,15 @@
       return;
     }
     if (event.defaultPrevented || event.isComposing || composing || event.keyCode === 229 || event.ctrlKey || event.altKey || event.metaKey || shortcutDialog.open) return;
+    if (!event.shiftKey && ["x", "c"].includes(event.key.toLowerCase()) && !event.target.closest?.("input, select, textarea, [contenteditable]:not([contenteditable='false']), [role='textbox'], dialog")) {
+      const speed = [...document.querySelectorAll('.playback-speed input')].find(input => input.getClientRects().length && getComputedStyle(input).visibility !== "hidden");
+      if (speed) {
+        event.preventDefault();
+        speed.value = NeuroUI.nextPlaybackSpeed(speed.value, event.key.toLowerCase() === "c" ? 1 : -1);
+        speed.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      return;
+    }
     // Browsers also submit forms implicitly from Shift+Enter in an input.
     // Suppress that submission while editing; textarea line breaks remain native.
     if (event.key === "Enter" && event.shiftKey && event.target instanceof HTMLInputElement && event.target.form === $("settings")) {
@@ -1168,6 +1224,8 @@
       const next = tabs[(position + (event.key.toLowerCase() === "n" ? 1 : -1) + tabs.length) % tabs.length];
       view = next.dataset.view;
       renderView();
+      next.classList.add("shortcut-focus");
+      next.addEventListener("blur", () => next.classList.remove("shortcut-focus"), { once: true });
       next.focus({ preventScroll: true });
     }
   });
@@ -1192,7 +1250,7 @@
     const input = event.target, file = input.files[0];
     if (!file) return;
     try {
-      if (file.size > 600000) throw new Error("The configuration file is too large.");
+      if (file.size > 32000000) throw new Error("The configuration file exceeds 32 MB.");
       const parsed = JSON.parse(await file.text());
       if (parsed.version !== 2 || !parsed.config) throw new Error("Choose a version 2 experiment configuration.");
       const { config } = M.prepare(parsed.config);

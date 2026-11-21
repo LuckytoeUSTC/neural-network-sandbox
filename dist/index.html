@@ -11,6 +11,8 @@
   <script src="model.js" defer></script>
   <script src="ui.js" defer></script>
   <script src="viz.js" defer></script>
+  <script src="layout.js" defer></script>
+  <script src="gif.js" defer></script>
   <script src="theory.js" defer></script>
   <script src="file:///D:/MathJax/local-mathjax.js" data-manual defer></script>
   <script src="math.js" defer></script>
@@ -82,13 +84,14 @@
   <dialog id="shortcuts-dialog" aria-labelledby="shortcuts-title">
     <h2 id="shortcuts-title">Keyboard shortcuts</h2>
     <dl class="shortcut-list">
-      <div><dt><kbd>Shift</kbd> + <kbd>Enter</kbd></dt><dd>Resample noise and run</dd></div>
+      <div><dt><kbd>Shift</kbd> + <kbd>Enter</kbd></dt><dd>Run experiment</dd></div>
       <div><dt><kbd>B</kbd> / <kbd>N</kbd></dt><dd>Previous / next result tab</dd></div>
+      <div><dt><kbd>X</kbd> / <kbd>C</kbd></dt><dd>Decrease / increase playback speed</dd></div>
       <div><dt><kbd>?</kbd></dt><dd>Open this guide</dd></div>
       <div><dt><kbd>F5</kbd></dt><dd>Resample connectivity and run</dd></div>
       <div><dt><kbd>F9</kbd></dt><dd>Resample noise and run</dd></div>
     </dl>
-    <p>F5 resamples connectivity. F9 resamples noise. Both rerun the experiment, keeping the other settings unchanged.</p>
+    <p>Shift + Enter runs with the current settings without changing any configuration. F5 resamples connectivity. F9 resamples noise. Both rerun the experiment, keeping the other settings unchanged.</p>
     <form method="dialog"><button class="tool" type="submit">Close</button></form>
   </dialog>
 </body>

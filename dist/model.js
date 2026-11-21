@@ -6,7 +6,7 @@
   const waveforms = { off: "None", pulse: "Square pulse", paired: "Paired pulses", step: "Step", sine: "Sinusoidal", custom: "Custom sequence" };
   const sampling = { random: "Random subsampling", orthogonal: "Random orth. projection", gaussian: "i.i.d. Gaussian projection", manual: "Manual subset", first: "First neurons", spread: "Evenly spaced subset", group: "Within-group subset" };
   const settings = {
-    n: [1, 96, 1], groups: [1, 16, 1], eiFraction: [0, 1], inhibRatio: [0, 30],
+    n: [1, 1000, 1], groups: [1, 16, 1], eiFraction: [0, 1], inhibRatio: [0, 30],
     gain: [-30, 30], density: [0, 1], between: [-1, 1], rank: [1, 8, 1], bulk: [0, 20], jitter: [0, 1],
     networkSeed: [0, 4294967295, 1], noiseSeed: [0, 4294967295, 1], observeSeed: [0, 4294967295, 1],
     tau: [2, 2000], bias: [-5000, 5000], initial: [0, 100], noise: [0, 3000], noiseTau: [1, 5000], shared: [0, 1],
@@ -14,7 +14,7 @@
     reversalE: [-40, 45], reversalI: [-110, -40], tauE: [0.5, 1000], tauI: [0.5, 1000],
     refractory: [0, 20], delay: [0, 100], adapt: [0, 1000], adaptTau: [5, 5000],
     amplitude: [-5000, 5000], onset: [0, 20000], width: [0.1, 20000], interval: [0.1, 20000], frequency: [0.1, 1000],
-    total: [20, 20000], warmup: [0, 15000], sample: [0.1, 50], m: [1, 96, 1], group: [1, 16, 1]
+    total: [20, 20000], warmup: [0, 15000], sample: [0.1, 50], m: [1, 1000, 1], group: [1, 16, 1]
   };
   const presets = {
     ring: ["Ring propagation", {}],
@@ -108,7 +108,7 @@
     config.dt = Number(source.dt);
     if (!stepOptions.includes(config.dt)) throw new Error("Select a valid time step.");
     for (const key of ["matrix", "events", "targets", "observe"]) {
-      if (typeof source[key] !== "string" || source[key].length > 200000) throw new Error(`The text for ${key} is invalid or too long.`);
+      if (typeof source[key] !== "string" || source[key].length > (key === "matrix" ? 30000000 : 200000)) throw new Error(`The text for ${key} is invalid or too long.`);
       config[key] = source[key];
     }
     const { n, dt, model, m, topology, groups, waveform } = config;
@@ -133,6 +133,8 @@
       }
     }
     if (waveform === "sine" && 1000 / config.frequency < 10 * dt) throw new Error("A sinusoidal period requires at least 10 time steps. Reduce the time step or frequency.");
+    const savedValues = (Math.round(config.total / config.sample) + 1) * config.n;
+    if (savedValues > 4000000) throw Object.assign(new Error("The full-network recording exceeds 4 million values per trial. Increase Sample interval or shorten Duration."), { field: "sample" });
     if ((config.total + config.warmup) / dt > 80000 || config.total / config.sample > 16000) throw new Error("This simulation exceeds 80,000 time steps or 16,000 samples. Shorten the duration or increase the corresponding interval.");
     if (config.sample > config.total || !aligned(config.total, config.sample)) throw new Error("The recording duration must be an integer multiple of the sample interval and include at least one interval.");
     if (config.sample < dt) throw new Error("The sample interval cannot be shorter than the time step.");
@@ -205,9 +207,12 @@
         incoming[i].push([j, value]);
         outgoing[j].push([i, value]);
         edges.push({ from: j, to: i, value });
+        if (edges.length > 250000) throw Object.assign(new Error("This network exceeds 250,000 connections. Reduce connection probability or network size."), { field: "density" });
         maxAbs = Math.max(maxAbs, Math.abs(value));
       }
     }
+    const edgeSteps = edges.length * (config.total + config.warmup) / config.dt * (config.model === "lif" ? 1 : 4);
+    if (edgeSteps > 1000000000) throw new Error("This run exceeds the connection-update budget. Reduce connection probability or duration, or increase Time step within the model's accuracy requirements.");
     return { weights, incoming, outgoing, edges, maxAbs, group, groupNames, order };
   }
 
@@ -219,7 +224,7 @@
     }
     if (observeMode === "manual") return parseCells(observe, n);
     const available = network.order.filter(i => observeMode !== "group" || network.group[i] === group - 1);
-    if (m > available.length) throw new Error(`The selected group contains only ${available.length} neurons. Record fewer neurons or choose another group.`);
+    if (m > available.length) throw Object.assign(new Error(observeMode === "group" ? `The selected group contains ${available.length} neurons. Reduce Recorded neurons or choose another group.` : `The network contains ${n} neurons. Set Recorded neurons to ${n} or fewer.`), { field: "m" });
     if (observeMode === "spread") return Array.from({ length: m }, (_, i) => available[Math.floor((i + 0.5) * available.length / m)]);
     if (observeMode === "random") {
       const rand = random(observeSeed);
@@ -233,6 +238,8 @@
 
   function buildRecording(config, network) {
     const projected = ["orthogonal", "gaussian"].includes(config.observeMode);
+    if (projected && config.m * config.n * (config.total / config.sample + 1) > 200000000) throw Object.assign(new Error("This projection is too large. Reduce Readout channels, increase Sample interval, or shorten Duration."), { field: "m" });
+    if (config.observeMode === "orthogonal" && config.m * config.m * config.n > 100000000) throw Object.assign(new Error("This orthogonal projection is too large. Reduce Readout channels; the network size can stay unchanged."), { field: "m" });
     const ids = chooseObservations(config, network), n = config.n, m = ids.length;
     const weights = Array.from({ length: m }, () => new Float64Array(n));
     if (!projected) ids.forEach((id, row) => { weights[row][id] = 1; });
@@ -552,6 +559,7 @@
   function measure(result, ids, options) {
     const recording = options.recording;
     if (recording?.projected) result = { ...result, config: { ...result.config, n: recording.m }, baseline: recording.baseline, stimulated: recording.stimulated };
+    if (ids.length > 192) throw new Error("Covariance supports up to 192 readout channels. Reduce Recording for this analysis; all simulated neurons remain in the network.");
     const { config, baseline, stimulated } = result;
     const { n, sample, total } = config;
     const { start, end, window, kind, condition } = options;

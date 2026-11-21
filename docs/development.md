@@ -35,9 +35,19 @@ Chrome 157，离线运行，同配置交替测量三次，表中为 wall time �
 | E/I LIF，64 neurons，1.3 s | 150 ms | 184 ms | 187 ms |
 | Dense tanh，96 neurons，10 s，dt = 0.5 ms | 20.11 s | 6.65 s | 4.85 s |
 
-Dense tanh 的全部轨迹与统计输出逐项一致；后台版模拟期间，16 ms 主线程 heartbeat 的最大间隔为 18.5–21.8 ms。LIF 的计算循环没有这次的 rate-edge 优化，Worker 主要改善其界面响应，不保证更短的求解时间。仍维持 96 neurons、80,000 integration steps、16,000 recording intervals 的原有限制。
+Dense tanh 的全部轨迹与统计输出逐项一致；后台版模拟期间，16 ms 主线程 heartbeat 的最大间隔为 18.5–21.8 ms。LIF 的计算循环没有这次的 rate-edge 优化，Worker 主要改善其界面响应，不保证更短的求解时间。当时的上限为 96 neurons；当前资源限制见下一节。
 
 Rate model 将连接压成连续数组，减少 RK4 各阶段的边对象解构；当时的优化保持累加顺序、Time step、随机数序列与方程。
+
+## 当前规模与动画（2026-11-21）
+
+最多模拟 1,000 个神经元；协方差与特征值计算最多使用 192 个读出通道。另按连接数、积分工作量、轨迹存储量及投影计算量限制过大的配置，具体阈值集中在 `model.js`。本机 Node 单次试算：1,000 节点 ring 约 0.30 s、1% 密度 random rate 约 1.09 s、1% 密度 LIF 约 0.82 s；这些是模拟耗时，不含浏览器绘图，不能外推到稠密网络。
+
+`layout.js` 在 Worker 中计算带原位置约束的弹簧布局；`gif.js` 在 Worker 中量化和编码 GIF，逐帧接收图像，不保留全部原始帧。矩阵热图先生成像素缓存，悬停时只重绘缓存和选框。播放倍速控件由 `ui.js` 共用。1× 对应模拟时间与现实时间同步；GIF 按记录时长除以倍速确定总时长，采用 10 ms 时间单位及 20 ms 最短帧，累积分配帧延时以避免舍入误差累积。
+
+`node tests/verify-playback-time.cjs` 用受控时钟检查 Nodes 和 Compare 的实际时间映射、暂停续播、动态调速及结束归零。
+
+`node tests/verify-node-tools.cjs` 检查读出错误、倍速及快捷键、布局切换、四种预设的节点间距和两种 GIF 导出。视觉比较与输出文件写入 `.test-output/`。
 
 ## 构建离线包
 
@@ -53,3 +63,9 @@ MathJax 目录须包含 `local-mathjax.js` 与 `4.1.3/`（SVG renderer、extensi
 
 项目代码采用 MIT 许可证。离线包中的 MathJax 和字体沿用各自的 Apache-2.0 许可证，原文保存在 `vendor/mathjax/4.1.3/LICENSE` 和 `vendor/mathjax/4.1.3/fonts/mathjax-newcm-font/LICENSE`。本仓库不附带课程讲义、论文 PDF、本机配置或开发历史存档。
 
+
+## 轻量包与布局缓存（2026-11-21）
+
+`python tools/build-release.py --lite --output release/neural-network-sandbox-lite.zip` 生成不带 MathJax 的离线包；模型说明保留公式源码，不添加联网依赖。`node tests/verify-release.cjs --lite` 验证此包。
+
+Nodes 的概览连接排序及分组按 network 对象缓存，重抽样后自然使用新缓存；WeakMap 不阻止旧网络释放。弹簧布局把固定排斥系数和连接强度归一化移到迭代循环外，方程与迭代次数不变。四种预设的布局结果与整理前一致。

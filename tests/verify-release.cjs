@@ -9,7 +9,8 @@ const { chromium } = require("playwright");
 
 (async () => {
   const folder = await fs.mkdtemp(join(tmpdir(), "neuro-offline-"));
-  const archive = resolve(__dirname, "../release/neural-network-sandbox-offline.zip");
+  const lite = process.argv.includes("--lite");
+  const archive = resolve(__dirname, `../release/neural-network-sandbox-${lite ? "lite" : "offline"}.zip`);
   execFileSync(process.env.PYTHON || "python", ["-c", "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])", archive, folder]);
   const browser = await chromium.launch({ headless: true, ...require("./browser.cjs") });
   try {
@@ -39,14 +40,15 @@ const { chromium } = require("playwright");
     await page.locator("button[data-view=methods]").click();
     for (const language of ["zh", "en"]) {
       await page.locator(`button[data-language=${language}]`).click();
-      await page.waitForFunction(() => document.querySelector("#theory").dataset.mathState === "ready");
-      assert.ok(await page.locator("mjx-container").count() > 100);
+      await page.waitForFunction(expected => document.querySelector("#theory").dataset.mathState === expected, lite ? "source" : "ready");
+      if (lite) assert.ok((await page.locator("#theory").textContent()).includes("Sample interval"));
+      else assert.ok(await page.locator("mjx-container").count() > 100);
       assert.equal(await page.locator(".math-error, [data-mml-node=merror]").count(), 0);
     }
-    assert.ok(requests.some(url => url.includes("/vendor/mathjax/4.1.3/tex-svg.js")));
+    assert.equal(requests.some(url => url.includes("/vendor/mathjax/4.1.3/tex-svg.js")), !lite);
     assert.ok(requests.every(url => !/^https?:/i.test(url) && !url.startsWith("file:///D:/MathJax/")));
     assert.deepEqual(errors, []);
-    console.log("Portable release passed: random extraction directory, offline simulation, config round-trip, CSV export, bilingual MathJax; no external dependencies.");
+    console.log(`${lite ? "Lite" : "Full"} portable release passed: random extraction directory, offline simulation, config round-trip, CSV export, bilingual MathJax; no external dependencies.`);
   } finally {
     await browser.close();
     // This temporary directory was created by this test, never supplied by a caller.

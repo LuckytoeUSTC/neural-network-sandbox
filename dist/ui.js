@@ -20,6 +20,7 @@
     ,collapse: ['M4 9h5V4M15 4v5h5M20 15h-5v5M9 20v-5H4']
     ,lock: ['M6 10h12v11H6z', 'M8 10V6a4 4 0 0 1 8 0v4', 'M12 14v3']
     ,unlock: ['M6 10h12v11H6z', 'M8 10V6a4 4 0 0 1 8 0', 'M12 14v3']
+    ,layout: ['M4 6l8 6 8-8M12 12l5 8M12 12L3 19', 'circle:4,6,2', 'circle:12,12,2', 'circle:20,4,2', 'circle:17,20,2', 'circle:3,19,2']
     ,fit: ['M4 5v14M20 5v14', 'M8 8l-4 4 4 4M16 8l4 4-4 4M4 12h16']
     ,pin: ['M8 3h8l-1 7 4 4v2H5v-2l4-4-1-7', 'M12 16v6']
     ,unpin: ['M8 3h8l-1 7 4 4v2H5v-2l4-4-1-7', 'M12 16v6', 'M3 3l18 18']
@@ -138,9 +139,13 @@
       const match = part.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/);
       if (!match) throw new Error("Use comma-separated IDs and ranges, for example 1-4, 7.");
       const a = Number(match[1]), z = Number(match[2] ?? match[1]);
-      if (a < 1 || z < a || z > Math.max(...available) + 1) throw new Error(`Use an increasing range of available ${noun.toLowerCase()} IDs.`);
+      if (!Number.isSafeInteger(a) || !Number.isSafeInteger(z) || a < 1) throw new Error(`${noun} IDs must be positive integers.`);
+      if (z < a) throw new Error(`Range ${a}-${z} is reversed. Put the smaller ID first.`);
+      const max = Math.max(0, ...available) + 1;
+      if (a > max) throw new Error(noun === "Neuron" ? `Neuron ${a} was not recorded. Include it in Recording and try again.` : `Channel ${a} is unavailable. Increase Readout channels in Recording.`);
+      if (z > max) throw new Error(noun === "Neuron" ? `Neuron ${max + 1} was not recorded. Include it in Recording or shorten the range.` : `Channel ${max + 1} is unavailable. Increase Readout channels in Recording or shorten the range.`);
       for (let id = a - 1; id < z; id++) {
-        if (!allowed.has(id)) throw new Error(`${noun} ${id + 1} is not in this readout. Change Recording to include it.`);
+        if (!allowed.has(id)) throw new Error(noun === "Neuron" ? `Neuron ${id + 1} was not recorded. Include it in Recording and try again.` : `Channel ${id + 1} is unavailable in this readout.`);
         if (!seen.has(id)) { seen.add(id); ids.push(id); }
       }
     }
@@ -151,7 +156,7 @@
     const input = document.createElement("input"); input.type = "text"; input.className = "neuron-selection";
     input.autocomplete = "off"; input.spellcheck = false; input.placeholder = "1-4, 7";
     input.value = formatNeuronIds(selected); input.setAttribute("aria-label", noun + " IDs");
-    input.title = noun + " IDs: 1-4, 7, or all";
+    input.title = `Select recorded ${noun.toLowerCase()} IDs. Available: ${formatNeuronIds(available)}. Use commas, ranges, or all.`;
     if (id) input.id = id; if (focusKey) input.dataset.cmpFocus = focusKey;
     let previous = input.value;
     const apply = (report = false) => {
@@ -168,7 +173,35 @@
     });
     label.append(noun + "s", input); return label;
   }
-  globalThis.NeuroUI = { icon, infoButton, showInfo, iconize, bindInfo, closeInfo, formatNeuronIds, parseNeuronIds, neuronInput };
+  function nextPlaybackSpeed(value, direction) {
+    const speed = Number(value) || 1;
+    const bands = [[.02, .1, .02], [.1, .3, .05], [.3, 3, .1], [3, 10, 1]];
+    const band = bands.find(([low, high]) => direction > 0 ? speed >= low && speed < high : speed > low && speed <= high);
+    if (!band) return Math.min(10, Math.max(.02, speed));
+    return Number(Math.min(band[1], Math.max(band[0], speed + direction * band[2])).toFixed(2));
+  }
+  function speedControl(value, onChange) {
+    const wrap = document.createElement("label"); wrap.className = "playback-speed";
+    const prefix = document.createElement("span"); prefix.textContent = "×"; prefix.setAttribute("aria-hidden", "true");
+    const input = document.createElement("input"); input.type = "number"; input.min = .02; input.max = 10; input.step = "any";
+    const format = speed => Number(speed).toFixed(2).replace(/0$/, "");
+    input.value = format(value || 1); input.title = "Playback speed (0.02–10×; 1× = real time)"; input.setAttribute("aria-label", "Playback speed");
+    const commit = () => {
+      if (!input.value.trim()) input.value = "1.0";
+      if (!input.checkValidity() || !Number.isFinite(input.valueAsNumber)) { input.reportValidity(); return; }
+      const speed = Math.round(input.valueAsNumber * 100) / 100; input.value = format(speed); onChange(speed);
+    };
+    input.addEventListener("change", commit);
+    input.addEventListener("blur", () => { if (!input.value.trim()) commit(); });
+    input.addEventListener("keydown", event => {
+      if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (["ArrowUp", "ArrowDown"].includes(event.key)) {
+        event.preventDefault(); input.value = nextPlaybackSpeed(input.value, event.key === "ArrowUp" ? 1 : -1); commit();
+      } else if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); commit(); }
+    });
+    wrap.append(prefix, input); return wrap;
+  }
+  globalThis.NeuroUI = { icon, infoButton, showInfo, iconize, bindInfo, closeInfo, speedControl, nextPlaybackSpeed, formatNeuronIds, parseNeuronIds, neuronInput };
   for (const [id, name, label] of [["save-config", "download", "Export config"], ["shortcuts", "keyboard", "Keyboard shortcuts"]]) {
     const node = document.getElementById(id); if (node) iconize(node, name, label);
   }

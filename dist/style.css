@@ -236,7 +236,7 @@ main { padding: 0 24px 16px; }
 .nodes-heading { gap: 8px; align-items: center; flex-wrap: wrap; }
 .nodes-title, .nodes-controls { display: inline-flex; align-items: center; gap: 5px; }
 .nodes-controls { margin-left: auto; flex-wrap: nowrap; }
-.nodes-controls select { width: 128px; min-height: 34px; padding: 5px 25px 5px 8px; font-size: 14px; font-weight: 400; }
+.nodes-controls select { width: 132px; min-width: 132px; flex: 0 0 132px; min-height: 34px; padding: 5px 25px 5px 8px; font-size: 14px; font-weight: 400; }
 .nodes-controls .icon-button { width: 32px; min-width: 32px; height: 34px; min-height: 34px; padding: 5px; }
 .nodes-info { padding: 8px 0; font-size: 16px; line-height: 1.55; flex: 0 0 auto; max-height: 128px; overflow-y: auto; }
 .nodes-info p + p { margin-top: 8px; }
@@ -421,7 +421,7 @@ main { padding: 0 24px 16px; }
 #pin-reference[hidden] { display: none !important; }
 .view-controls #input-cell { width: 94px; min-width: 94px; max-width: 94px; flex: 0 0 94px; padding-right: 28px; }
 .view-controls label:has(#input-cell) { flex-shrink: 0; }
-.view-controls .cmp-transport { width: 106px; min-width: 106px; height: 36px; flex: 0 0 106px; gap: 4px; }
+.view-controls .cmp-transport { width: 204px; min-width: 204px; height: 36px; flex: 0 0 204px; gap: 4px; }
 .view-controls .transport-placeholder { visibility: hidden; }
 .view-controls [data-cmp-focus="view"] { width: 148px; flex: 0 0 148px; }
 .view-controls [data-cmp-focus="activity"], .view-controls [data-cmp-focus="condition"] { width: 180px; flex: 0 0 180px; }
@@ -438,3 +438,20 @@ main { padding: 0 24px 16px; }
 @media (prefers-reduced-motion: reduce) {
   #views [data-view="compare"].reference-pulse { animation: none; }
 }
+
+/* Playback actions share one fixed slot across activity modes. */
+.nodes-transport > button { flex: 0 0 34px; }
+.nodes-heading .icon-button[aria-pressed="true"] { background: #dfece7; border-color: #7eaa99; }
+.theory-toc { border-block: 1px solid var(--line); padding: 10px 0; margin: 12px 0 24px; }
+.theory-toc p { margin: 6px 0; }
+.theory-toc a { display: inline-block; margin: 0 12px 3px 0; }
+.theory-toc strong { margin-right: 12px; }
+#theory [id] { scroll-margin-top: 12px; }
+
+.nodes-transport .playback-speed, .view-controls .playback-speed { display: inline-flex; align-items: center; gap: 0; width: 54px; min-width: 54px; flex: 0 0 54px; flex-wrap: nowrap; font-weight: 400; font-size: 14px; }
+.playback-speed input[type=number][step] { width: 44px; min-width: 0; padding: 4px 0; min-height: 32px; border: 0; background: transparent; font-variant-numeric: tabular-nums; }
+
+.playback-speed input::-webkit-inner-spin-button, .playback-speed input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.playback-speed input[type=number][step] { appearance: textfield; border-radius: 0; }
+
+.playback-speed input[type=number][step]:focus, #views button.shortcut-focus:focus { outline: none; box-shadow: none; }
