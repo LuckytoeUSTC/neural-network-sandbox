@@ -8,10 +8,17 @@
 
 慢慢走，记得全屏！
 
----
+## 如何下载使用
 
-[下载完整版](https://github.com/LuckytoeUSTC/neural-network-sandbox/releases/latest/download/neural-network-sandbox-offline.zip) · [下载轻量版](https://github.com/LuckytoeUSTC/neural-network-sandbox/releases/latest/download/neural-network-sandbox-lite.zip)
+到[发布页](https://github.com/LuckytoeUSTC/neural-network-sandbox/releases/latest)下载 ZIP，两个版本都能离线运行：
 
-完整解压后，用 Chrome 或 Edge 打开 `index.html`。
+| 版本 | 下载大小 | 解压后大小 | 区别 |
+|---|---:|---:|---|
+| [完整版](https://github.com/LuckytoeUSTC/neural-network-sandbox/releases/latest/download/neural-network-sandbox-offline.zip) | 约 4.31 MB | 约 13.41 MB | 包含 MathJax，可以正常显示说明中的公式 |
+| [轻量版](https://github.com/LuckytoeUSTC/neural-network-sandbox/releases/latest/download/neural-network-sandbox-lite.zip) | 约 99 KB | 约 325 KB | 不带 MathJax，公式显示为源码；模拟功能相同 |
 
-源码采用 [MIT 许可证](LICENSE)。[开发说明](docs/development.md)。
+完整解压后，用 Chrome 或 Edge 打开文件夹里的 `index.html`。不需要安装 Python、Node.js 或其他运行环境。请保留整个文件夹，不要只拿出 HTML 文件。
+
+## AI 参与说明
+
+这个项目主要通过 Codex 开发，代码、界面实现和双语模型说明都大量使用了 AI，模型说明主要由 GPT-6 Astra 协助完成。我负责提出想法、决定功能和交互方式，反复试用，再要求它修改。README 前面的介绍是我写的，下载说明和这一节由 AI 协助整理。
