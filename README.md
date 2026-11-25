@@ -14,8 +14,8 @@
 
 | 版本 | 下载大小 | 解压后大小 | 区别 |
 |---|---:|---:|---|
-| [完整版](https://github.com/LuckytoeUSTC/neural-network-sandbox/releases/latest/download/neural-network-sandbox-offline.zip) | 约 4.31 MB | 约 13.41 MB | 包含 MathJax，可以正常显示说明中的公式 |
-| [轻量版](https://github.com/LuckytoeUSTC/neural-network-sandbox/releases/latest/download/neural-network-sandbox-lite.zip) | 约 99 KB | 约 325 KB | 不带 MathJax，公式显示为源码；模拟功能相同 |
+| [完整版](https://github.com/LuckytoeUSTC/neural-network-sandbox/releases/latest/download/neural-network-sandbox-offline.zip) | 约 4.31 MB | 约 13.34 MB | 包含 MathJax，可以正常显示说明中的公式 |
+| [轻量版](https://github.com/LuckytoeUSTC/neural-network-sandbox/releases/latest/download/neural-network-sandbox-lite.zip) | 约 95 KB | 约 257 KB | 不带 MathJax，公式显示为源码；模拟功能相同 |
 
 完整解压后，用 Chrome 或 Edge 打开文件夹里的 `index.html`。不需要安装 Python、Node.js 或其他运行环境。请保留整个文件夹，不要只拿出 HTML 文件。
 

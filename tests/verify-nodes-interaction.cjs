@@ -1,0 +1,35 @@
+const {chromium}=require('playwright'),a=require('node:assert/strict'),{resolve}=require('node:path'),{pathToFileURL}=require('node:url');
+(async()=>{const b=await chromium.launch({headless:true,...require('./browser.cjs')});try{
+ const p=await b.newPage({viewport:{width:1480,height:1000}}),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.goto(pathToFileURL(resolve(__dirname,process.env.NEURO_TEST_ENTRY || '../dist/index.html')).href);await p.waitForFunction(()=>document.querySelector('#run').dataset.state==='complete');
+ a.deepEqual(await p.evaluate(()=>{const f=NeuroViz.numericFormat(-.8,.8);return [-.00104,0,.00104,.8].map(f)}),['−0.00104',' 0.00000',' 0.00104',' 0.80000']);
+ const trajectory=await p.evaluate(async()=>{const network=NeuroModel.buildNetwork(NeuroModel.preset('random')),n=network.order.length,anchors=Array.from({length:n},(_,i)=>[.5+.35*Math.cos(i*2*Math.PI/n),.5+.35*Math.sin(i*2*Math.PI/n)]),frames=[];await NeuroLayout.relax(network,anchors,new AbortController().signal,positions=>frames.push(positions));let curve=0;for(let i=0;i<n;i++){const end=frames.at(-1)[i],middle=frames[10][i],start=anchors[i];curve=Math.max(curve,Math.abs((middle[0]-start[0])*(end[1]-start[1])-(middle[1]-start[1])*(end[0]-start[0])))}return {frames:frames.length,curve}});a.ok(trajectory.frames>20);a.ok(trajectory.curve>1e-4,'relaxation must follow a trajectory, not interpolate to the endpoint');
+ await p.evaluate(()=>{const original=NeuroViz.graph;NeuroViz.graph=options=>{window.graphOptions=options;return window.currentGraph=original(options)}});await p.locator('button[data-view=connectivity]').click();await p.evaluate(()=>document.activeElement.blur());
+ await p.keyboard.press('f'); a.equal(await p.locator('#nodes-time-value').textContent(),'2 ms');
+ await p.keyboard.press('d'); a.equal(await p.locator('#nodes-time-value').textContent(),'0 ms');
+ await p.keyboard.press('Space'); a.equal(await p.locator('#nodes-play').getAttribute('aria-pressed'),'true');
+ await p.keyboard.press('Space'); a.equal(await p.locator('#nodes-play').getAttribute('aria-pressed'),'false');
+ await p.locator('#nodes-expand').click(); a.equal(await p.locator('#nodes-fit').isVisible(),false);await p.locator('#nodes-layout').click();await p.waitForFunction(()=>!document.querySelector('#nodes-layout').hasAttribute('aria-busy'));
+ for(const key of ['F9','F5']){await p.keyboard.press(key);await p.waitForFunction(()=>document.querySelector('#run').dataset.state==='complete'&&document.querySelector('#nodes-layout')?.getAttribute('aria-pressed')==='true');await p.waitForFunction(()=>!document.querySelector('#nodes-layout').hasAttribute('aria-busy'));a.equal(await p.locator('body').evaluate(e=>e.classList.contains('nodes-expanded')),true)}
+ await p.locator('#nodes-size').fill('4');await p.locator('#nodes-size').dispatchEvent('input');await p.locator('#nodes-territory').click();
+ const canvas=p.locator('#graph'),rect=await canvas.boundingBox();await p.mouse.move(rect.x+rect.width*.55,rect.y+rect.height*.5);await p.mouse.wheel(0,-280);await p.waitForTimeout(120);a.ok(await p.evaluate(()=>graphOptions.viewport.k>1));a.equal(await p.locator('#nodes-fit').isVisible(),true);await p.locator('#nodes-fit').click();a.equal(await p.locator('#nodes-fit').isVisible(),false);a.ok(await p.evaluate(()=>graphOptions.viewport.k<=1));
+ const before=await p.evaluate(()=>currentGraph.normalizedPositions());const id=0,start=before[id];await p.mouse.move(rect.x+start[0]*rect.width,rect.y+start[1]*rect.height);await p.mouse.down();await p.mouse.move(rect.x+start[0]*rect.width+55,rect.y+start[1]*rect.height+40,{steps:8});await p.waitForTimeout(60);const after=await p.evaluate(()=>currentGraph.normalizedPositions());a.ok(Math.hypot(after[id][0]-before[id][0],after[id][1]-before[id][1])>.005);await p.mouse.up();await p.waitForTimeout(1500);
+ await p.locator('#nodes-time').fill('150');await p.locator('#nodes-time').dispatchEvent('input');await p.waitForTimeout(300);
+ await p.screenshot({path:resolve(__dirname,'../.test-output/nodes-territory.png')});await p.locator('#nodes-territory').click();await p.screenshot({path:resolve(__dirname,'../.test-output/nodes-relaxation.png')});await p.locator('#nodes-layout').click();
+ a.equal(await p.locator('#nodes-restore-layout').isVisible(),false);
+ const original=await p.evaluate(()=>currentGraph.normalizedPositions()),pos=original[2],box=await canvas.boundingBox();
+ await p.mouse.move(box.x+pos[0]*box.width,box.y+pos[1]*box.height);await p.mouse.down();await p.mouse.move(box.x+pos[0]*box.width+50,box.y+pos[1]*box.height+30,{steps:5});await p.mouse.up();
+ a.equal(await p.locator('#nodes-restore-layout').isVisible(),true);await p.locator('#nodes-restore-layout').click();
+ a.equal(await p.locator('#nodes-restore-layout').isVisible(),false);a.deepEqual(await p.evaluate(()=>currentGraph.normalizedPositions()),original);
+ await p.keyboard.press('f');a.equal(await p.locator('#nodes-time-value').textContent(),'302 ms');
+ await p.keyboard.press('d');a.equal(await p.locator('#nodes-time-value').textContent(),'300 ms');
+ await p.mouse.move(box.x+box.width/2,box.y+box.height/2);await p.mouse.wheel(0,800);await p.waitForTimeout(100);
+ const screen=await p.evaluate(()=>{const q=currentGraph.normalizedPositions()[2],v=graphOptions.viewport;return {x:(q[0]-.5)*v.k+.5+v.x,y:(q[1]-.5)*v.k+.5+v.y};});
+ await p.mouse.move(box.x+screen.x*box.width,box.y+screen.y*box.height);await p.mouse.down();await p.mouse.move(box.x+box.width*.96,box.y+box.height*.55,{steps:8});await p.mouse.up();
+ const moved=await p.evaluate(()=>currentGraph.normalizedPositions());a.ok(moved[2][0]>1,'preset node must be draggable beyond original world bounds');
+ const home=await p.evaluate(()=>currentGraph.cameraHome());await p.locator('#nodes-fit').click();
+ a.deepEqual(await p.evaluate(()=>({x:graphOptions.viewport.x,y:graphOptions.viewport.y})),home);
+ a.deepEqual(await p.evaluate(()=>currentGraph.normalizedPositions()),moved);a.equal(await p.locator('#nodes-fit').isVisible(),false);
+ const bounded=await p.evaluate(()=>{const field=NeuroTerritory.field(),c=document.createElement('canvas');c.width=200;c.height=200;const ctx=c.getContext('2d');field.paint(ctx,200,200,[[100,100]],['rgb(0,100,0)'],35,true);const pixel=(x,y)=>ctx.getImageData(x,y,1,1).data[3];const result=[pixel(0,0),pixel(100,100),pixel(100,123),pixel(100,139)];field.dispose();return result;});
+ a.equal(bounded[0],0);a.equal(bounded[1],255);a.ok(bounded[2]>0&&bounded[2]<255);a.equal(bounded[3],0);
+ a.deepEqual(errors,[]);console.log('PASS: fixed decimal columns, streamed curved relaxation, F5/F9 persistence, size, territory, zoom and dragging.',trajectory);
+}finally{await b.close()}})().catch(e=>{console.error(e);process.exitCode=1});

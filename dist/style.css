@@ -455,3 +455,22 @@ main { padding: 0 24px 16px; }
 .playback-speed input[type=number][step] { appearance: textfield; border-radius: 0; }
 
 .playback-speed input[type=number][step]:focus, #views button.shortcut-focus:focus { outline: none; box-shadow: none; }
+
+/* Columns keep sign, decimal and exponent positions across all animation frames. */
+.numeric-value, .probe-value, .color-legend-ticks span { font-family: Consolas, monospace; font-variant-numeric: tabular-nums; white-space: pre; }
+.numeric-value { text-align: right; }
+
+.nodes-spatial-tools { display: flex; align-items: center; gap: 12px; flex: 0 0 100%; font-size: 14px; font-weight: 400; }
+.nodes-spatial-tools label { display: inline-flex; align-items: center; gap: 8px; }
+.nodes-spatial-tools input[type=range][id] { width: 140px; min-width: 80px; padding: 0; border: 0; background: transparent; accent-color: var(--green); }
+.nodes-spatial-tools .tool { min-height: 32px; padding: 4px 10px; }
+.nodes-spatial-tools [aria-pressed=true] { background: #dfece7; border-color: #7eaa99; }
+.nodes-expanded .activity-color-legend { width: 108px; }
+.nodes-expanded .nodes-data.nodes-activity-data { grid-template-columns: minmax(0, 1fr) 108px; }
+.nodes-expanded .viz-grid > .nodes-card { grid-template-columns: minmax(0, 1fr) 328px; }
+@media(max-width:700px) { .nodes-spatial-tools { gap: 6px; flex-wrap: wrap; } .nodes-spatial-tools input[type=range][id] { width: 100px; } .nodes-expanded .viz-grid > .nodes-card { grid-template-columns: minmax(0, 1fr); } }
+
+.nodes-camera-tools { grid-area: plot; align-self: start; justify-self: end; z-index: 2; margin: 8px; pointer-events: none; }
+.nodes-camera-tools button { pointer-events: auto; background: #fffefaed; box-shadow: 0 1px 5px #22393120; }
+.nodes-camera-tools button[hidden] { display: none !important; }
+.nodes-spatial-tools .icon-button { flex: 0 0 32px; width: 32px; height: 32px; min-height: 32px; padding: 4px; }

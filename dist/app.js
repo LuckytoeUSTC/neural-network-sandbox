@@ -59,7 +59,7 @@
   const observationKeys = new Set(["observeMode", "m", "group", "observe", "observeSeed"]);
   const fieldLabels = Object.fromEntries(Object.values(fields).flat().map(([key, label]) => [key, label]));
   let result = null, recording = null, observed = [], observationController = null, view = "traces", controller = null, revision = 0, activePreset = "ring", dirty = false;
-  let viewState = null, animation = 0, nodesExpanded = false;
+  let viewState = null, nodesExpanded = false;
   let theoryLanguage = "zh";
   let reference = null, comparison = null, compareState = {};
   let runState = "pending", runProgress = 0;
@@ -311,7 +311,7 @@
         graphMode: result.input.length ? "stimulated" : "baseline", graphPoint: 0, graphPlaying: false, graphScales: new Map()
       };
       if (previousState) {
-        for (const key of ["condition", "activityCondition", "covCondition", "firstLocked", "covFirstLocked", "showInput", "inputVisibility", "playbackSpeed", "graphMode", "focusEdges", "groups"]) viewState[key] = previousState[key];
+        for (const key of ["condition", "activityCondition", "covCondition", "firstLocked", "covFirstLocked", "showInput", "inputVisibility", "playbackSpeed", "graphMode", "focusEdges", "groups", "forceEnabled", "nodeSize", "territory", "graphViewport"]) viewState[key] = previousState[key];
         const snap = value => Math.max(0, Math.min(result.config.total, Math.round(value / sample) * sample));
         for (const [a, b] of [["first", "last"], ["covFirst", "covLast"]]) {
           const full = previousState[a] === 0 && previousState[b] === previousConfig.total;
@@ -621,7 +621,6 @@
   }
 
   function traceView() {
-    let trace;
     const spiking = result.config.model === "lif";
     conditionSelect("condition");
     const ids = viewState.traceIds?.filter(id => observed.includes(id)) || observed.slice(0, 8);
@@ -633,15 +632,17 @@
       const toggle = tool(viewState.showInput ? "Hide stimulus" : "Show stimulus", () => {
         viewState.showInput = !viewState.showInput;
         viewState.inputVisibility[viewState.condition] = viewState.showInput;
-      globalThis.NeuroUI.iconize(toggle, viewState.showInput ? "stimulus" : "stimulusOff", viewState.showInput ? "Hide stimulus" : "Show stimulus");
-        toggle.setAttribute("aria-pressed", String(viewState.showInput));
+        label();
         if ($("input-cell")) $("input-cell").disabled = !viewState.showInput;
         chartNodes.find(card => card.showSecondary)?.showSecondary(viewState.showInput);
       });
       toggle.id = "input-toggle";
       toggle.disabled = !result.input.length;
-      globalThis.NeuroUI.iconize(toggle, viewState.showInput ? "stimulus" : "stimulusOff", viewState.showInput ? "Hide stimulus" : "Show stimulus");
-      toggle.setAttribute("aria-pressed", String(viewState.showInput));
+      const label = () => {
+        globalThis.NeuroUI.iconize(toggle, viewState.showInput ? "stimulus" : "stimulusOff", viewState.showInput ? "Hide stimulus" : "Show stimulus");
+        toggle.setAttribute("aria-pressed", String(viewState.showInput));
+      };
+      label();
       {
         const cells = recording.projected ? observed : [...new Set(result.input.flatMap(item => item.cells))].sort((a, b) => a - b);
         {
@@ -668,7 +669,7 @@
       });
       note($("result-note").textContent + "\n\nThe thick orange input trace has its own fixed scale; read its amplitude and units in the Input column. It shows commanded stimulus on the integration grid, excluding background drive.");
     }
-    trace = timeChart(V.lines({
+    timeChart(V.lines({
       title: recording.projected ? (spiking ? "Projected voltage (mV)" : "Projected activity") : spiking ? "Membrane potential (mV)" : "Activity (dimensionless)",
       traceReadout: true, series: activitySeries, readoutSeries, secondarySeries,
       secondaryStep: dt, secondaryLabel: spiking ? "Input (pA)" : "Input (dimensionless)",
@@ -855,11 +856,11 @@
     const stats = document.createElement("dl");
     stats.className = "covariance-summary";
     for (const [label, value] of [[recording.projected ? "Channels m" : "Recorded neurons m", observed.length], ["Samples M", samples],
-      ["Spatial fraction f", V.number(observed.length / result.config.n)], ["Sample ratio m/M", V.number(observed.length / samples)],
-      ["Participation ratio", dimensions === null ? "—" : V.number(dimensions)],
-      ["Relative PR", dimensions === null ? "—" : V.number(dimensions / observed.length)]]) {
+      ["Spatial fraction f", V.numericFormat(0, 1)(observed.length / result.config.n)], ["Sample ratio m/M", V.numericFormat(0, observed.length / samples)(observed.length / samples)],
+      ["Participation ratio", dimensions === null ? "—" : V.numericFormat(0, observed.length)(dimensions)],
+      ["Relative PR", dimensions === null ? "—" : V.numericFormat(0, 1)(dimensions / observed.length)]]) {
       const row = document.createElement("div"), term = document.createElement("dt"), detail = document.createElement("dd");
-      term.textContent = label; detail.textContent = value; row.append(term, detail); stats.append(row);
+      term.textContent = label; detail.textContent = value; detail.className = "numeric-value"; row.append(term, detail); stats.append(row);
     }
     spectrumCard.append(stats);
     for (const card of chartNodes) card.paintNow();
@@ -876,7 +877,8 @@
     const grid = document.createElement("div"); grid.className = "viz-grid";
     $("viz-wrap").append(grid);
     const unit = config.model === "lif" ? " nS" : "";
-    const signed = v => V.number(v) + unit;
+    const weightFormat = V.numericFormat(-network.maxAbs, network.maxAbs);
+    const signed = v => weightFormat(v) + unit;
     const shade = viewState.graphMode !== "structure";
     const center = config.model === "lif" && viewState.graphMode !== "delta" ? config.rest : 0;
     const activity = shade ? cell => nodePoint(viewState.graphMode, viewState.graphPoint, cell) - center : null;
@@ -888,8 +890,13 @@
       viewState.graphScales.set(viewState.graphMode, scale);
     }
     const scale = viewState.graphScales.get(viewState.graphMode);
+    viewState.graphViewport ||= { k: 1, x: 0, y: 0 };
     const graph = V.graph({ result, observed: recording.projected ? [] : observed, selected, onlySelected: viewState.focusEdges, activity, scale,
-      positions: nodesExpanded && viewState.forceEnabled ? viewState.forcePositions : null,
+      positions: nodesExpanded ? (viewState.forceEnabled ? viewState.forcePositions : viewState.manualPositions) : null,
+      interactive: nodesExpanded, viewport: nodesExpanded ? viewState.graphViewport : { k: 1, x: 0, y: 0 },
+      nodeSize: nodesExpanded ? viewState.nodeSize || 1 : 1, territory: nodesExpanded && viewState.territory,
+      onMove: points => { if (viewState.forceEnabled) viewState.forcePositions = points; else viewState.manualPositions = points; },
+      onDrag: (...args) => graph.handleDrag?.(...args),
       select: (cell, focusGraph) => selectNode(cell, focusGraph ? "graph" : null) });
     graph.classList.add("nodes-card");
     attach(graph, grid);
@@ -918,7 +925,7 @@
         for (const [node, weight] of values) {
           const row = table.tBodies[0].insertRow();
           row.insertCell().textContent = incoming ? `${node + 1} → ${selected + 1}` : `${selected + 1} → ${node + 1}`;
-          row.insertCell().textContent = signed(weight);
+          const valueCell = row.insertCell(); valueCell.className = "numeric-value"; valueCell.textContent = signed(weight);
         }
         section.append(table);
       } else {
@@ -955,7 +962,7 @@
     const colorNote = (recording.projected ? "Nodes shows full-network neuron states. Each projected channel mixes activity from these neurons. Orange borders mark stimulus targets. " : shade ? "Node color shows activity; thick borders mark recorded neurons, orange borders mark stimulus targets. " :
       "Filled nodes are recorded neurons; orange borders mark stimulus targets. ") + "Green solid edges have positive weights; orange dashed edges have negative weights.";
     details.append(...[graph.edgeSummary, colorNote, scaleNote, viewState.graphMode === "delta" ? differenceNote() : ""].filter(Boolean).map(text => { const p = document.createElement("p"); p.textContent = text; return p; }));
-    UI.bindInfo(about, () => [...details.children].map(p => p.textContent).join("\n\n"));
+    if (!nodesExpanded) UI.bindInfo(about, () => [...details.children].map(p => p.textContent).join("\n\n"));
     title.append(about);
     const actions = document.createElement("span"); actions.className = "nodes-controls";
     const mode = document.createElement("select"); mode.id = "graph-mode"; mode.setAttribute("aria-label", "Nodes activity");
@@ -965,6 +972,7 @@
     const expand = document.createElement("button"); expand.type = "button"; expand.id = "nodes-expand";
     UI.iconize(expand, nodesExpanded ? "collapse" : "expand", nodesExpanded ? "Exit Nodes full screen" : "Expand Nodes");
     expand.setAttribute("aria-expanded", String(nodesExpanded)); expand.addEventListener("click", () => setNodesExpanded(!nodesExpanded));
+    const activityFormat = V.numericFormat(center - (scale || 0), center + (scale || 0));
     let activityRows = [], timeline, timeReadout;
     if (nodesExpanded) {
       const sidebar = document.createElement("aside"); sidebar.className = "nodes-data nodes-activity-data";
@@ -1012,7 +1020,7 @@
       if (!timeReadout) { timeReadout = document.createElement("output"); timeReadout.id = "nodes-time-value"; }
       const gif = NeuroGIF.control({
         filename: "nodes-activity.gif", signal: lifetime.signal, plan: () => NeuroGIF.framePlan(config.total, Number(gifInterval.value), config.sample, viewState.playbackSpeed || 1),
-        beforeStart: () => { viewState.graphPlaying = false; cancelAnimationFrame(animation); animation = 0; label(); },
+        beforeStart: () => playback.pause(),
         renderFrame: fraction => {
           const previous = viewState.graphPoint;
           const point = Math.round(fraction * (baseline.points - 1));
@@ -1026,7 +1034,7 @@
       gif.id = "nodes-gif";
       const speed = UI.speedControl(viewState.playbackSpeed || 1, value => {
         viewState.playbackSpeed = value;
-        if (viewState.graphPlaying) { cancelAnimationFrame(animation); start(); }
+        playback.changeSpeed();
       });
       transport.append(gif, speed, play, timeReadout);
       if (!shade) { transport.style.visibility = "hidden"; play.disabled = true; }
@@ -1037,55 +1045,87 @@
         viewState.graphPoint = index;
         const ms = `${V.number(index * config.sample, 8)} ms`;
         timeReadout.textContent = ms;
-        probe?.update([ms, String(viewState.selected + 1), V.number(nodePoint(viewState.graphMode, index, viewState.selected))]);
-        if (timeline) { timeline.value = index; timeline.setAttribute("aria-valuetext", ms); timeReadout.textContent = ms; }
+        probe?.update([ms, String(viewState.selected + 1), activityFormat(nodePoint(viewState.graphMode, index, viewState.selected))]);
+        if (timeline) { timeline.value = index; timeline.setAttribute("aria-valuetext", ms); }
         for (const { cell, value, dot } of shade ? activityRows : []) {
           const activity = nodePoint(viewState.graphMode, index, cell);
-          value.textContent = V.number(activity); dot.style.backgroundColor = V.activityColor(activity - center, scale);
+          value.classList.add("numeric-value"); value.textContent = activityFormat(activity); dot.style.backgroundColor = V.activityColor(activity - center, scale);
         }
         graph.refresh();
       };
       const label = () => { UI.iconize(play, viewState.graphPlaying ? "pause" : "play", viewState.graphPlaying ? "Pause activity" : "Play activity"); play.setAttribute("aria-pressed", String(viewState.graphPlaying)); };
-      const start = () => {
-        const index = viewState.graphPoint, began = performance.now();
-        const next = now => {
-          if (!viewState.graphPlaying || !graph.isConnected) return;
-          const elapsed = index * config.sample + Math.max(0, now - began) * (viewState.playbackSpeed || 1);
-          const point = Math.min(baseline.points - 1, Math.floor(elapsed / config.sample));
-          if (elapsed >= config.total) { viewState.graphPlaying = false; animation = 0; setPoint(0); label(); return; }
-          setPoint(point);
-          animation = requestAnimationFrame(next);
-        };
-        animation = requestAnimationFrame(next);
-      };
-      play.addEventListener("click", () => {
-        viewState.graphPlaying = !viewState.graphPlaying; cancelAnimationFrame(animation); animation = 0; label();
-        if (viewState.graphPlaying) start();
+      const playback = UI.playback({
+        time: () => viewState.graphPoint * config.sample, duration: () => config.total,
+        sample: () => config.sample, speed: () => viewState.playbackSpeed || 1,
+        playing: () => viewState.graphPlaying, active: () => graph.isConnected,
+        setTime: time => setPoint(Math.min(baseline.points - 1, Math.round(time / config.sample))),
+        setPlaying: value => { viewState.graphPlaying = value; label(); }
       });
-      timeline?.addEventListener("input", () => {
-        viewState.graphPlaying = false; cancelAnimationFrame(animation); animation = 0;
-        label(); setPoint(Number(timeline.value));
-      });
-      label(); setPoint(viewState.graphPoint); if (shade && viewState.graphPlaying) start();
+      lifetime.signal.addEventListener("abort", playback.stop, { once: true });
+      play.addEventListener("click", playback.toggle);
+      play.dataset.activityTransport = "true";
+      play.addEventListener("step-frame", event => { if (shade) playback.step(event.detail); });
+      timeline?.addEventListener("input", () => playback.seek(Number(timeline.value) * config.sample));
+      label(); setPoint(viewState.graphPoint); if (shade && viewState.graphPlaying) playback.start();
       actions.prepend(transport);
     }
+    let spatialTools;
     if (nodesExpanded) {
+      spatialTools = document.createElement("span"); spatialTools.className = "nodes-spatial-tools";
+      const sizeLabel = document.createElement("label"); sizeLabel.textContent = "Node size";
+      const size = document.createElement("input"); size.id = "nodes-size"; size.type = "range"; size.min = .5; size.max = 12; size.step = .1; size.value = viewState.nodeSize || 1;
+      size.setAttribute("aria-label", "Node size");
+      size.addEventListener("input", () => { viewState.nodeSize = Number(size.value); graph.setNodeSize(viewState.nodeSize); }); sizeLabel.append(size);
+      const territory = document.createElement("button"); territory.type = "button"; territory.id = "nodes-territory"; territory.className = "tool";
+      UI.iconize(territory, "territory", "Territory"); territory.setAttribute("aria-pressed", String(Boolean(viewState.territory))); territory.disabled = !shade;
+      territory.title = "Territory: blend activity colors around each node";
+      territory.addEventListener("click", () => { viewState.territory = !viewState.territory; territory.setAttribute("aria-pressed", String(viewState.territory)); graph.setTerritory(viewState.territory); });
+      const fit = document.createElement("button"); fit.type = "button"; fit.id = "nodes-fit";
+      UI.iconize(fit, "resetView", "Reset view: original zoom, center current nodes");
+      const cameraTools = document.createElement("div"); cameraTools.className = "nodes-camera-tools"; cameraTools.append(fit); graph.append(cameraTools);
+      const updateCamera = () => { const v = viewState.graphViewport, home = graph.cameraHome(); fit.hidden = !v || (Math.abs(v.k - 1) < 1e-6 && Math.abs(v.x - home.x) < 1e-6 && Math.abs(v.y - home.y) < 1e-6); };
+      graph.onViewChange = updateCamera; updateCamera();
+      fit.addEventListener("click", () => { graph.querySelector("canvas").focus({ preventScroll: true }); graph.resetCamera(); });
+      const restore = document.createElement("button"); restore.type = "button"; restore.id = "nodes-restore-layout";
+      UI.iconize(restore, "restoreLayout", "Restore preset layout");
+      const updateRestore = () => { restore.style.visibility = !viewState.forceEnabled && viewState.manualPositions ? "visible" : "hidden"; restore.disabled = viewState.forceEnabled || !viewState.manualPositions; };
+      restore.addEventListener("click", () => { viewState.manualPositions = null; graph.setPositions(null); updateRestore(); graph.querySelector("canvas").focus({ preventScroll: true }); });
       const layout = document.createElement("button"); layout.type = "button"; layout.id = "nodes-layout";
-      const label = () => { UI.iconize(layout, "layout", viewState.forceEnabled ? "Restore ordered layout" : "Relax layout by connection strength"); layout.setAttribute("aria-pressed", String(Boolean(viewState.forceEnabled))); };
+      const label = () => { UI.iconize(layout, "layout", viewState.forceEnabled ? "Spring layout: on; switch to preset layout" : "Spring layout"); layout.setAttribute("aria-pressed", String(Boolean(viewState.forceEnabled))); };
+      let task, relaxation;
+      const stop = () => { relaxation?.abort(); task = null; };
+      lifetime.signal.addEventListener("abort", stop, { once: true });
+      const start = () => {
+        stop(); relaxation = new AbortController();
+        const currentState = viewState, signal = relaxation.signal;
+        currentState.forceAnchors ||= graph.normalizedPositions();
+        currentState.forceSettled = false; layout.setAttribute("aria-busy", "true");
+        task = NeuroLayout.relax(result.network, currentState.forceAnchors, signal, positions => {
+          if (signal.aborted) return;
+          currentState.forcePositions = positions; graph.setPositions(positions);
+        }, graph.normalizedPositions());
+        task.then(positions => {
+          if (signal.aborted) return;
+          currentState.forcePositions = positions; currentState.forceSettled = true; task = null; layout.removeAttribute("aria-busy");
+        }).catch(error => { if (error.name !== "AbortError") UI.showInfo("Node layout", error.message); });
+      };
+      graph.handleDrag = (id, position, released) => {
+        if (!viewState.forceEnabled) { updateRestore(); return; }
+        if (released) { task?.pin(null); return; }
+        if (!task) start();
+        task.pin(id, position[0], position[1]);
+      };
       label();
-      layout.addEventListener("click", async () => {
-        if (viewState.forceEnabled) { viewState.forceEnabled = false; graph.setPositions(null); label(); return; }
-        layout.disabled = true; layout.setAttribute("aria-busy", "true");
-        try {
-          if (!viewState.forcePositions) viewState.forcePositions = await NeuroLayout.relax(result.network, graph.normalizedPositions(), lifetime.signal);
-          lifetime.signal.throwIfAborted();
-          viewState.forceEnabled = true; graph.setPositions(viewState.forcePositions); label();
-        } catch (error) { if (error.name !== "AbortError") message(error.message, "error"); }
-        finally { layout.disabled = false; layout.removeAttribute("aria-busy"); }
+      layout.addEventListener("click", () => {
+        if (viewState.forceEnabled) { stop(); viewState.forceEnabled = false; viewState.forcePositions = null; viewState.forceAnchors = null; viewState.manualPositions = null; graph.setPositions(null); layout.removeAttribute("aria-busy"); }
+        else { viewState.forceEnabled = true; start(); }
+        label(); updateRestore();
       });
-      actions.append(layout);
+      updateRestore(); spatialTools.append(layout, territory, sizeLabel, restore);
+      if (viewState.forceEnabled && !viewState.forceSettled) requestAnimationFrame(() => { if (!lifetime.signal.aborted) start(); });
+      UI.bindInfo(about, () => [...details.children].map(p => p.textContent).join("\n\n") + "\n\nScroll to zoom around the pointer. Drag a node to move it; drag empty space to pan. Spring layout adjusts positions according to connection strength. Preset layout restores the network’s initial arrangement. Territory blends colors within a limited region around each node. Reset view restores the original zoom and centers the current node arrangement; Restore preset layout resets dragged nodes. Read individual activity values from the nodes and table.");
     }
-    actions.append(mode, expand); heading.replaceChildren(title, actions); heading.after(details);
+    actions.append(mode, expand); heading.replaceChildren(title, actions, ...(spatialTools ? [spatialTools] : [])); heading.after(details);
     return scaleNote;
   }
 
@@ -1117,8 +1157,6 @@
     syncPin();
     if (viewInfo.dataset.infoView !== view) { $("view-description").hidden = true; viewInfo.setAttribute("aria-expanded", "false"); viewInfo.dataset.infoView = view; }
     viewInfoHome.append(viewInfo);
-    cancelAnimationFrame(animation);
-    animation = 0;
     comparison?.dispose();
     comparison = null;
     for (const card of chartNodes.splice(0)) card.dispose();
@@ -1191,7 +1229,17 @@
       return;
     }
     if (event.defaultPrevented || event.isComposing || composing || event.keyCode === 229 || event.ctrlKey || event.altKey || event.metaKey || shortcutDialog.open) return;
-    if (!event.shiftKey && ["x", "c"].includes(event.key.toLowerCase()) && !event.target.closest?.("input, select, textarea, [contenteditable]:not([contenteditable='false']), [role='textbox'], dialog")) {
+    const editing = event.target.closest?.("input, select, textarea, [contenteditable]:not([contenteditable='false']), [role='textbox'], dialog");
+    if (!event.shiftKey && [" ", "d", "f"].includes(event.key.toLowerCase()) && !editing) {
+      const play = [...document.querySelectorAll('[data-activity-transport]')].find(button => !button.disabled && button.getClientRects().length && getComputedStyle(button).visibility !== "hidden");
+      if (play) {
+        event.preventDefault();
+        if (event.key === " ") { if (!event.repeat) play.click(); }
+        else play.dispatchEvent(new CustomEvent("step-frame", { detail: event.key.toLowerCase() === "d" ? -1 : 1 }));
+        return;
+      }
+    }
+    if (!event.shiftKey && ["x", "c"].includes(event.key.toLowerCase()) && !editing) {
       const speed = [...document.querySelectorAll('.playback-speed input')].find(input => input.getClientRects().length && getComputedStyle(input).visibility !== "hidden");
       if (speed) {
         event.preventDefault();
@@ -1200,21 +1248,9 @@
       }
       return;
     }
-    // Browsers also submit forms implicitly from Shift+Enter in an input.
-    // Suppress that submission while editing; textarea line breaks remain native.
-    if (event.key === "Enter" && event.shiftKey && event.target instanceof HTMLInputElement && event.target.form === $("settings")) {
-      event.preventDefault();
-      return;
-    }
     if (event.target instanceof Element && event.target.closest("input, select, textarea, [contenteditable]:not([contenteditable='false']), [role='textbox'], canvas, .viz-card, dialog")) return;
-    if (event.repeat) {
-      if (event.key === "Enter" && event.shiftKey) event.preventDefault();
-      return;
-    }
-    if (event.key === "Enter" && event.shiftKey) {
-      event.preventDefault();
-      if (!controller) void runExperiment(readForm());
-    } else if (event.key === "?") {
+    if (event.repeat) return;
+    if (event.key === "?") {
       event.preventDefault();
       shortcutDialog.showModal();
     } else if (["b", "n"].includes(event.key.toLowerCase())) {

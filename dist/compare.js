@@ -6,7 +6,7 @@
     const V = globalThis.NeuroViz, M = globalThis.NeuroModel, UI = globalThis.NeuroUI;
     const charts = new Set();
     let disposed = false, events = null;
-    let sharedValueRange, timeRange, duration = 0, timeStep = 1, playback = 0, playButton, timeDisplay;
+    let sharedValueRange, timeRange, duration = 0, timeStep = 1, playButton, timeDisplay;
     let graphUpdates = [], graphExports = [], colorScales = {};
     const scaleCache = new Map();
     let additionalInfo = "";
@@ -197,18 +197,12 @@
     function playbackLabel() {
       if (playButton) { UI.iconize(playButton, state.playing ? "pause" : "play", state.playing ? "Pause comparison" : "Play comparison"); playButton.setAttribute("aria-pressed", String(Boolean(state.playing))); }
     }
-    function startPlayback() {
-      cancelAnimationFrame(playback);
-      const origin = state.time, began = performance.now();
-      const next = now => {
-        if (disposed || !state.playing) return;
-        const time = origin + Math.max(0, now - began) * (state.playbackSpeed || 1);
-        if (time >= duration) { state.time = 0; state.playing = false; playbackLabel(); refreshActivity(); playback = 0; return; }
-        state.time = Number((Math.floor(time / timeStep) * timeStep).toFixed(8));
-        refreshActivity(); playback = requestAnimationFrame(next);
-      };
-      playback = requestAnimationFrame(next);
-    }
+    const playback = UI.playback({
+      time: () => state.time, duration: () => duration, sample: () => timeStep,
+      speed: () => state.playbackSpeed || 1, playing: () => state.playing, active: () => !disposed,
+      setTime: time => { state.time = time; refreshActivity(); },
+      setPlaying: value => { state.playing = value; playbackLabel(); }
+    });
     function differences(parent) {
       const section = el("section", undefined, "cmp-differences"), heading = el("h3", "Configuration changes");
       section.append(heading);
@@ -307,7 +301,8 @@
           const probe = V.fieldsReadout(["Neuron", config.model === "lif" ? "V (mV)" : "Activity"]);
           V.linkProbe(graph, probe);
           if (!shade) { probe.style.visibility = "hidden"; probe.setAttribute("aria-hidden", "true"); }
-          const refresh = () => { probe.update([String(state[key] + 1), V.number(valueAt(run, shade ? state.graphMode : "stimulated", point(), state[key]))]); graph.refresh(); };
+          const formatActivity = V.numericFormat(center - scale, center + scale);
+          const refresh = () => { probe.update([String(state[key] + 1), formatActivity(valueAt(run, shade ? state.graphMode : "stimulated", point(), state[key]))]); graph.refresh(); };
           graphUpdates.push(refresh); refresh();
         }
       }
@@ -316,7 +311,7 @@
       if (disposed) return;
       const active = document.activeElement;
       const restore = focusKey ?? (root.contains(active) || controls?.contains(active) ? active?.dataset.cmpFocus : null);
-      cancelAnimationFrame(playback); graphUpdates = []; graphExports = []; playButton = null; timeDisplay = null;
+      playback.stop(); graphUpdates = []; graphExports = []; playButton = null; timeDisplay = null;
       UI.closeInfo();
       clearCharts();
       events?.abort();
@@ -341,11 +336,13 @@
           value => update("graphMode", value), "activity"));
         {
           const transport = el("div", undefined, "cmp-transport");
-          playButton = button("", () => { state.playing = !state.playing; playbackLabel(); if (state.playing) startPlayback(); else cancelAnimationFrame(playback); }, "play");
+          playButton = button("", playback.toggle, "play");
+          playButton.dataset.activityTransport = "true";
+          listen(playButton, "step-frame", event => playback.step(event.detail));
           timeDisplay = el("output", `${V.number(state.time, 8)} ms`, "cmp-time"); timeDisplay.setAttribute("aria-label", "Comparison time");
           const gif = NeuroGIF.control({
             filename: "comparison-activity.gif", signal: events.signal, plan: () => NeuroGIF.framePlan(duration, gifFrameInterval(), timeStep, state.playbackSpeed || 1),
-            beforeStart: () => { state.playing = false; cancelAnimationFrame(playback); playbackLabel(); },
+            beforeStart: playback.pause,
             renderFrame: fraction => {
               const previous = state.time;
               try {
@@ -356,7 +353,7 @@
             onError: error => UI.showInfo("GIF export", error.message)
           });
           gif.dataset.cmpFocus = "gif";
-          const speed = UI.speedControl(state.playbackSpeed || 1, value => { state.playbackSpeed = value; if (state.playing) startPlayback(); });
+          const speed = UI.speedControl(state.playbackSpeed || 1, value => { state.playbackSpeed = value; playback.changeSpeed(); });
           playbackLabel(); transport.append(gif, speed, playButton, timeDisplay); toolbar.append(transport);
           if (state.graphMode === "structure") { transport.style.visibility = "hidden"; playButton.disabled = true; }
         }
@@ -381,7 +378,7 @@
       additionalInfo = ""; differences(root);
       const difference = (state.view === "traces" ? state.condition : state.graphMode) === "delta" ? "Difference = Stimulus − Baseline within each run." : "";
       onInfo?.([explanation, difference, additionalInfo].filter(Boolean).join("\n\n"));
-      if (state.playing && state.view === "connectivity" && state.graphMode !== "structure") startPlayback();
+      if (state.playing && state.view === "connectivity" && state.graphMode !== "structure") playback.start();
       if (restore) {
         const target = [...root.querySelectorAll("[data-cmp-focus]"), ...controls?.querySelectorAll("[data-cmp-focus]") || []].find(node => node.dataset.cmpFocus === restore);
         target?.focus({ preventScroll: true });
@@ -391,7 +388,7 @@
     return { dispose() {
       if (disposed) return;
       disposed = true;
-      state.playing = false; cancelAnimationFrame(playback);
+      state.playing = false; playback.stop();
       events?.abort();
       clearCharts();
       root.replaceChildren();

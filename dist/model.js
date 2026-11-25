@@ -19,8 +19,8 @@
   const presets = {
     ring: ["Ring propagation", {}],
     chain: ["Feedforward propagation", { topology: "chain", gain: 1.05 }],
-    random: ["Random rate network", { model: "tanh", topology: "random", n: 48, gain: 1.35, density: 0.7, amplitude: 0.45, m: 8, initial: 0.18 }],
-    lowrank: ["Low-rank network", { model: "tanh", topology: "lowrank", n: 48, gain: 1.6, rank: 2, bulk: 0.45, noise: 0.045, m: 12, targets: "1-8" }],
+    random: ["Random rate network", { model: "tanh", topology: "random", n: 18, gain: 1.35, density: 0.7, amplitude: 0.45, m: 8, initial: 0.18 }],
+    lowrank: ["Low-rank network", { model: "tanh", topology: "lowrank", n: 18, gain: 1.6, rank: 2, bulk: 0.45, noise: 0.045, m: 12, targets: "1-8" }],
     clusters: ["Clustered network", { model: "sigmoid", topology: "cluster", n: 36, gain: 8, groups: 3, density: 0.85, between: -0.15, bias: -2.8, amplitude: 2.5, targets: "1-5", m: 9 }],
     covariance: ["Partial observation", { topology: "random", n: 32, gain: 0.7, noise: 0.30, noiseTau: 10, waveform: "off", m: 12, total: 8000, warmup: 800, sample: 4, observeMode: "random" }],
     ei: ["E/I spiking network", { model: "lif", topology: "ei", n: 64, gain: 1.5, density: 0.25, inhibRatio: 4, bias: 190, noise: 65, amplitude: 130, targets: "1-8", m: 16, observeMode: "spread", total: 1300, warmup: 300, width: 180, onset: 350, dt: 0.25, sample: 1 }],

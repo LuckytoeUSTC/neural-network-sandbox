@@ -21,6 +21,9 @@
     ,lock: ['M6 10h12v11H6z', 'M8 10V6a4 4 0 0 1 8 0v4', 'M12 14v3']
     ,unlock: ['M6 10h12v11H6z', 'M8 10V6a4 4 0 0 1 8 0', 'M12 14v3']
     ,layout: ['M4 6l8 6 8-8M12 12l5 8M12 12L3 19', 'circle:4,6,2', 'circle:12,12,2', 'circle:20,4,2', 'circle:17,20,2', 'circle:3,19,2']
+    ,resetView: ['M3 3l5 5M4 8h4V4', 'M21 3l-5 5M16 4v4h4', 'M21 21l-5-5M20 16h-4v4', 'M3 21l5-5M8 20v-4H4', 'M12 10.5v3M10.5 12h3']
+    ,territory: ['M12 5C8 2 2 5 2 11c0 6 5 10 10 7 3-4-3-8 0-13z', 'M12 5c5-3 10 1 10 7s-6 9-10 6c3-4-3-8 0-13z', 'circle:7,11,1', 'circle:17,12,1']
+    ,restoreLayout: ['M5 5A10 10 0 1 1 2 12M5 1.5V5h3.5', 'M11.3 9.17l-2.1 3.64M9.9 14.02h4.2M14.8 12.81l-2.1-3.64', 'circle:12,7.96,1.4', 'circle:8.5,14.02,1.4', 'circle:15.5,14.02,1.4']
     ,fit: ['M4 5v14M20 5v14', 'M8 8l-4 4 4 4M16 8l4 4-4 4M4 12h16']
     ,pin: ['M8 3h8l-1 7 4 4v2H5v-2l4-4-1-7', 'M12 16v6']
     ,unpin: ['M8 3h8l-1 7 4 4v2H5v-2l4-4-1-7', 'M12 16v6', 'M3 3l18 18']
@@ -38,6 +41,11 @@
         shape.setAttribute("cx", cx); shape.setAttribute("cy", cy); shape.setAttribute("r", r); svg.append(shape);
       } else { const shape = document.createElementNS(ns, "path"); shape.setAttribute("d", path); svg.append(shape); }
     }
+    if (name === "territory") {
+      for (const [i, opacity] of [[0, ".12"], [1, ".28"]]) { svg.children[i].setAttribute("fill", "currentColor"); svg.children[i].setAttribute("fill-opacity", opacity); }
+    }
+    if (name === "restoreLayout") svg.children[1].setAttribute("stroke-width", "1");
+    if (name === "resetView") svg.setAttribute("stroke-width", "1.5");
     return svg;
   }
   let dialog, title, body;
@@ -185,7 +193,7 @@
     const prefix = document.createElement("span"); prefix.textContent = "×"; prefix.setAttribute("aria-hidden", "true");
     const input = document.createElement("input"); input.type = "number"; input.min = .02; input.max = 10; input.step = "any";
     const format = speed => Number(speed).toFixed(2).replace(/0$/, "");
-    input.value = format(value || 1); input.title = "Playback speed (0.02–10×; 1× = real time)"; input.setAttribute("aria-label", "Playback speed");
+    input.value = format(value || 1); input.title = "Playback speed (×0.02–10; ×1 = real time)"; input.setAttribute("aria-label", "Playback speed");
     const commit = () => {
       if (!input.value.trim()) input.value = "1.0";
       if (!input.checkValidity() || !Number.isFinite(input.valueAsNumber)) { input.reportValidity(); return; }
@@ -201,7 +209,35 @@
     });
     wrap.append(prefix, input); return wrap;
   }
-  globalThis.NeuroUI = { icon, infoButton, showInfo, iconize, bindInfo, closeInfo, speedControl, nextPlaybackSpeed, formatNeuronIds, parseNeuronIds, neuronInput };
+  // Shared sampled-time transport. Views own their state and rendering; this owns the clock.
+  function playback({ time, duration, sample, speed, playing, active, setTime, setPlaying }) {
+    let frame = 0;
+    const stop = () => { cancelAnimationFrame(frame); frame = 0; };
+    const pause = () => { stop(); setPlaying(false); };
+    const seek = value => { pause(); setTime(Math.max(0, Math.min(duration(), value))); };
+    const start = () => {
+      stop();
+      const origin = time(), began = performance.now();
+      const tick = now => {
+        frame = 0;
+        if (!playing() || !active()) return;
+        const elapsed = origin + Math.max(0, now - began) * speed();
+        if (elapsed >= duration()) { pause(); setTime(0); return; }
+        const interval = sample(), next = Number((Math.floor(elapsed / interval) * interval).toFixed(8));
+        if (next !== time()) setTime(next);
+        frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+    };
+    return {
+      start, stop, pause, seek,
+      toggle() { if (playing()) pause(); else { setPlaying(true); start(); } },
+      step(direction) { const interval = sample(); seek((Math.round(time() / interval) + direction) * interval); },
+      changeSpeed() { if (playing()) start(); }
+    };
+  }
+
+  globalThis.NeuroUI = { playback, icon, infoButton, showInfo, iconize, bindInfo, closeInfo, speedControl, nextPlaybackSpeed, formatNeuronIds, parseNeuronIds, neuronInput };
   for (const [id, name, label] of [["save-config", "download", "Export config"], ["shortcuts", "keyboard", "Keyboard shortcuts"]]) {
     const node = document.getElementById(id); if (node) iconize(node, name, label);
   }

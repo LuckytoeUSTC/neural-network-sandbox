@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -29,7 +30,12 @@ def build(mathjax_root, output, lite=False):
             content = content.replace("D:\\\\MathJax", "vendor/mathjax").replace("共享文件", "随包文件").replace("shared files", "bundled files")
         if lite and path.name == "math.js":
             content = "globalThis.NeuroMath = { render: async e => { e.dataset.mathState = 'source'; }, setSource: async (e, source) => { e.innerHTML = source; e.dataset.mathState = 'source'; } };\n"
-        files[path.name] = content.encode("utf-8")
+        files[path.name] = content
+    files = json.loads(subprocess.run(
+        ["node", str(ROOT / "tools/minify-release.cjs")], input=json.dumps(files),
+        encoding="utf-8", stdout=subprocess.PIPE, check=True, cwd=ROOT
+    ).stdout)
+    files = {name: content.encode("utf-8") for name, content in files.items()}
     for path in ([] if lite else sorted(mathjax_root.rglob("*"))):
         if path.is_file() and (path.relative_to(mathjax_root).parts[0] == "4.1.3" or path.name == "local-mathjax.js"):
             relative = path.relative_to(mathjax_root).as_posix()

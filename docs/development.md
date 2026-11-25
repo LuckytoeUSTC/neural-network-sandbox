@@ -69,3 +69,9 @@ MathJax 目录须包含 `local-mathjax.js` 与 `4.1.3/`（SVG renderer、extensi
 `python tools/build-release.py --lite --output release/neural-network-sandbox-lite.zip` 生成不带 MathJax 的离线包；模型说明保留公式源码，不添加联网依赖。`node tests/verify-release.cjs --lite` 验证此包。
 
 Nodes 的概览连接排序及分组按 network 对象缓存，重抽样后自然使用新缓存；WeakMap 不阻止旧网络释放。弹簧布局把固定排斥系数和连接强度归一化移到迭代循环外，方程与迭代次数不变。四种预设的布局结果与整理前一致。
+
+### 发布文件压缩
+
+首次构建运行 `npm ci`。构建脚本批量压缩包内的 JavaScript 和 CSS，保留 `dist/` 的可读源码。Terser 不改写属性名、不启用 unsafe 优化；被序列化到 Worker 的函数只进行词法压缩，保留作用域结构。CSS 使用 clean-css level 0，仅删除注释和多余空白，不重排规则。说明正文、公式、数值精度均保留。压缩工具仅用于构建，不进入网页或下载包。
+
+`node tests/verify-app-equivalence.cjs` 比较源码与压缩版的配置、数据导出、图像像素和页面截图。`NEURO_BASELINE_APP` 可指定重构前的 app.js；Nodes 交互及 GIF 测试支持用 `NEURO_TEST_ENTRY` 指定压缩版入口。

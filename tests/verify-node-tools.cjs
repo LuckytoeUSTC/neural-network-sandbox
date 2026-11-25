@@ -2,7 +2,7 @@
 const {chromium}=require('playwright'),assert=require('node:assert/strict'),{resolve}=require('node:path'),{pathToFileURL}=require('node:url'),fs=require('node:fs/promises');
 (async()=>{const browser=await chromium.launch({headless:true,...require('./browser.cjs')});try{
  const page=await browser.newPage({viewport:{width:1480,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(pathToFileURL(resolve(__dirname,'../dist/index.html')).href);await page.waitForFunction(()=>document.querySelector('#run').dataset.state==='complete');
+ await page.goto(pathToFileURL(resolve(__dirname,process.env.NEURO_TEST_ENTRY || '../dist/index.html')).href);await page.waitForFunction(()=>document.querySelector('#run').dataset.state==='complete');
  const parsed=await page.evaluate(()=>{
   const outcomes={};for(const value of ['1, 7','4-2','0','1, x'])try{NeuroUI.parseNeuronIds(value,[0,1,2,3,4,5]);}catch(e){outcomes[value]=e.message}return outcomes;
  });assert.match(parsed['1, 7'],/7 was not recorded/);assert.match(parsed['4-2'],/reversed/);assert.match(parsed['0'],/positive integers/);assert.match(parsed['1, x'],/comma-separated/);

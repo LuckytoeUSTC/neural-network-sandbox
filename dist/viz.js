@@ -5,8 +5,22 @@
   const number = (value, precision = 3) => {
     const size = Math.abs(value);
     if (!Number.isFinite(value)) return "—";
-    return size !== 0 && (size < 0.001 || size >= 10000) ? value.toExponential(precision - 1) : Number(value.toPrecision(precision)).toString();
+    if (!size) return "0";
+    const decimals = Math.max(0, Math.min(100, precision - 1 - Math.floor(Math.log10(size))));
+    return Number(value.toPrecision(precision)).toFixed(decimals).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
   };
+  function numericFormat(low, high = low) {
+    const bound = Math.max(Math.abs(low || 0), Math.abs(high || 0));
+    const scaled = bound;
+    const decimals = Math.max(0, Math.min(100, 4 - Math.floor(Math.log10(scaled || 1))));
+    const integerWidth = Math.max(1, Number(scaled.toFixed(decimals)).toFixed(0).length);
+    return value => {
+      if (!Number.isFinite(value)) return "—";
+      const rounded = Number(value.toFixed(decimals));
+      const text = Math.abs(rounded).toFixed(decimals).padStart(integerWidth + (decimals ? decimals + 1 : 0), " ");
+      return (rounded < 0 ? "−" : " ") + text;
+    };
+  }
   const mix = (a, b, amount) => a.map((v, i) => Math.round(v + (b[i] - v) * amount));
   const heat = (value, scale, bipolar = true) => {
     const weight = scale ? Math.min(1, Math.abs(value) / scale) : 0;
@@ -31,7 +45,7 @@
     return frame;
   }
 
-  function fieldsReadout(labels) {
+  function fieldsReadout(labels, formats = []) {
     const panel = probePanel(), list = document.createElement("dl");
     panel.style.setProperty("--readout-width", `${labels.length * 144 + (labels.length - 1) * 24}px`);
     list.className = "probe-fields";
@@ -46,12 +60,12 @@
     panel.append(list);
     panel.update = (values, event) => {
       panel.setAttribute("aria-live", event?.type === "keydown" ? "polite" : "off");
-      outputs.forEach((output, i) => { output.textContent = values[i]; });
+      outputs.forEach((output, i) => { output.textContent = formats[i] ? formats[i](values[i]) : values[i]; });
     };
     return panel;
   }
 
-  function seriesReadout(series, timeLabel) {
+  function seriesReadout(series, timeLabel, fullLast) {
     const panel = probePanel(), table = document.createElement("table"), caption = document.createElement("caption");
     const time = document.createElement("span");
     time.className = "probe-value probe-time";
@@ -87,10 +101,14 @@
       }
     }
     panel.append(table);
+    const formats = new Map(columns.map(column => {
+      const lines = series.filter(line => (line.condition ?? "Value") === column);
+      const [low, high] = seriesRange(lines, 0, fullLast); return [column, numericFormat(low, high)];
+    }));
     panel.update = (point, ms, event) => {
       panel.setAttribute("aria-live", event?.type === "keydown" ? "polite" : "off");
       time.textContent = `${number(ms, 8)} ms`;
-      for (const [line, output] of outputs) output.textContent = number(line.at(point));
+      for (const [line, output] of outputs) output.textContent = formats.get(line.condition ?? "Value")(line.at(point));
     };
     return panel;
   }
@@ -149,7 +167,7 @@
       if (disposed) throw new DOMException("The plot was closed.", "AbortError");
       const snapshot = document.createElement("canvas"); snapshot.width = width; snapshot.height = height;
       const ctx = snapshot.getContext("2d"); ctx.fillStyle = paper; ctx.fillRect(0, 0, width, height);
-      ctx.save(); render(ctx, width, height); ctx.restore();
+      ctx.save(); render(ctx, width, height, true); ctx.restore();
       return snapshot;
     };
     if (inspect) {
@@ -223,7 +241,7 @@
   function lines({ title, series, step, first, last, bands, height = 348, reference, timeOffset = 0, timeLabel = "Time", valueRange, timeRange, traceReadout = false, readoutSeries = series, secondarySeries = [], secondaryStep = step, secondaryLabel = "Input", secondaryVisible = true, fullLast = last, fullTime = fullLast * step, scaleSeries = series, scaleLast = fullLast }) {
     let cursor = first;
     const timeAt = p => p * step + timeOffset;
-    const probe = seriesReadout(readoutSeries, timeLabel);
+    const probe = seriesReadout(readoutSeries, timeLabel, fullLast);
     probe.update(cursor, timeAt(cursor));
     let range = valueRange ?? seriesRange(series, first, last), lockedRange;
     let domain = timeRange ?? [timeAt(first), timeAt(last)];
@@ -231,9 +249,10 @@
     const secondaryRange = secondarySeries.length ? seriesRange(secondarySeries, 0, Math.round(fullTime / secondaryStep)) : null;
     const frame = chart(title, height, (ctx, w, h) => {
       const [low, high] = range;
+      const tickFormat = numericFormat(low, high);
       const b = bounds(w, h);
       ctx.font = "13px system-ui, sans-serif";
-      b.left = Math.max(40, ...ticks(low, high, 5).map(value => ctx.measureText(number(value)).width + 10));
+      b.left = Math.max(40, ...ticks(low, high, 5).map(value => ctx.measureText(tickFormat(value)).width + 10));
       b.right = w - Math.max(19, ctx.measureText(number(fullTime, 8)).width / 2 + 5);
       const x = timeAxis(ctx, b, domain[0], domain[1], bands);
       const secondaryY = value => b.bottom - (value - secondaryRange[0]) / (secondaryRange[1] - secondaryRange[0]) * (b.bottom - b.top);
@@ -245,7 +264,7 @@
         ctx.strokeStyle = faint;
         ctx.beginPath(); ctx.moveTo(b.left, vertical); ctx.lineTo(b.right, vertical); ctx.stroke();
         ctx.fillStyle = ink;
-        ctx.fillText(number(value), b.left - 8, vertical);
+        ctx.fillText(tickFormat(value), b.left - 8, vertical);
       }
       ctx.save();
       ctx.beginPath(); ctx.rect(b.left, b.top, b.right - b.left, b.bottom - b.top); ctx.clip();
@@ -318,8 +337,11 @@
   function activity({ title, count, labels, first, last, step, value, events, bands, fullLast = last, rowLabel = "Neuron", valueLabel = "Activity" }) {
     const height = Math.max(285, Math.min(630, 84 + count * 16));
     let selection = [first, 0];
-    const probe = fieldsReadout(["Time", rowLabel, events ? "Spikes per sample interval" : valueLabel]);
-    const updateProbe = (p, i, event) => probe.update([`${number(p * step, 8)} ms`, labels[i], number(value(p, i))], event);
+    let numericBound = 0;
+    for (let p = 0; p <= fullLast; p++) for (let i = 0; i < count; i++) numericBound = Math.max(numericBound, Math.abs(value(p, i)) || 0);
+    const activityFormat = numericFormat(-numericBound, numericBound);
+    const probe = fieldsReadout(["Time", rowLabel, events ? "Spikes per sample interval" : valueLabel], [null, null, activityFormat]);
+    const updateProbe = (p, i, event) => probe.update([`${number(p * step, 8)} ms`, labels[i], value(p, i)], event);
     updateProbe(first, 0);
     let locked = false, fullScale;
     const frame = chart(title, height, (ctx, w, h) => {
@@ -363,7 +385,7 @@
         ctx.fillStyle = ink;
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText(`Scale ${number(-scale)} · 0 · ${number(scale)}`, b.left, b.bottom + 25);
+        ctx.fillText(`Scale ${numericFormat(-scale, scale)(-scale)} · ${numericFormat(-scale, scale)(0)} · ${numericFormat(-scale, scale)(scale)}`, b.left, b.bottom + 25);
       }
       if (selection) {
         const [p, i] = selection;
@@ -403,14 +425,15 @@
     const n = labels.length;
     const height = 420;
     let selection = initial ?? [0, 0], hover = null;
+    let scale = colorScale ?? 0;
+    if (colorScale === undefined) for (const row of data) for (const entry of row) scale = Math.max(scale, Math.abs(entry));
+    const valueFormat = numericFormat(-scale, scale);
     const probe = fieldsReadout([direction ? "Connection (Source → Target)" : pairLabel, valueLabel]);
     const updateProbe = (to, from, event) => probe.update([
       direction ? `${labels[from]} → ${labels[to]}` : `${labels[to]} × ${labels[from]}`,
-      number(data[to][from]) + unit
+      valueFormat(data[to][from]) + unit
     ], event);
     updateProbe(...selection);
-    let scale = colorScale ?? 0;
-    if (colorScale === undefined) for (const row of data) for (const entry of row) scale = Math.max(scale, Math.abs(entry));
     const raster = document.createElement("canvas"); raster.width = n; raster.height = n;
     const pixels = raster.getContext("2d").createImageData(n, n);
     for (let to = 0; to < n; to++) for (let from = 0; from < n; from++) {
@@ -441,7 +464,7 @@
       for (let i = 0; i < n; i += skip) ctx.fillText(labels[i], left - 7, top + (i + 0.5) * c);
       ctx.textAlign = "center";
       for (let i = 0; i < n; i += skip) ctx.fillText(labels[i], left + (i + 0.5) * c, top + size + 13);
-      const marks = [[-scale, number(-scale)], [0, "0"], [scale, number(scale)]];
+      const marks = [[-scale, valueFormat(-scale)], [0, valueFormat(0)], [scale, valueFormat(scale)]];
       const legendY = top + size + 33;
       for (let k = 0; k < marks.length; k++) {
         const x = left + (k / 2) * Math.max(0, size - 45);
@@ -490,7 +513,7 @@
         ctx.strokeStyle = faint;
         ctx.beginPath(); ctx.moveTo(b.left, y); ctx.lineTo(b.right, y); ctx.stroke();
         ctx.fillStyle = ink; ctx.font = "13px system-ui"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-        ctx.fillText(number(high * fraction), b.left - 8, y);
+        ctx.fillText(numericFormat(0, high)(high * fraction), b.left - 8, y);
       }
       for (let i = 0; i < values.length; i++) {
         const bar = values[i] / high * (b.bottom - b.top);
@@ -502,7 +525,7 @@
   }
 
   const graphNetworks = new WeakMap();
-  function graph({ result, observed, selected, select, onlySelected, activity, scale = 1, positions: initialPositions = null }) {
+  function graph({ result, observed, selected, select, onlySelected, activity, scale = 1, positions: initialPositions = null, interactive = false, viewport = { k: 1, x: 0, y: 0 }, nodeSize = 1, territory = false, onMove, onDrag }) {
     const { network, config, input } = result;
     const { n, topology } = config, observedSet = new Set(observed), targets = new Set(input.flatMap(item => item.cells));
     let cached = graphNetworks.get(network);
@@ -519,7 +542,8 @@
     const title = "Nodes";
     const height = topology === "chain" ? Math.min(390, Math.max(156, Math.ceil(n / 10) * 56 + 44)) : 390;
     const groups = cached.groups;
-    let layout = null, customPositions = initialPositions, transition = 0;
+    let layout = null, customPositions = initialPositions, screenLayout = null;
+    const colorField = globalThis.NeuroTerritory?.field(() => frame.refresh());
     // Topology is fixed for this chart. Only a resize invalidates its layout.
     function geometry(w, h) {
       if (layout?.width === w && layout.height === h) return layout;
@@ -550,8 +574,15 @@
       layout = { width: w, height: h, positions, nodeR };
       return layout;
     }
-    const frame = chart(title, height, (ctx, w, h) => {
-      const { positions, nodeR } = geometry(w, h);
+    const frame = chart(title, height, (ctx, w, h, capture = false) => {
+      const base = geometry(w, h), positions = base.positions, nodeR = base.nodeR * nodeSize;
+      const project = ([x, y]) => [(x - w / 2) * viewport.k + w / 2 + viewport.x * w, (y - h / 2) * viewport.k + h / 2 + viewport.y * h];
+      const key = `${w},${h},${viewport.k},${viewport.x},${viewport.y}`;
+      if (screenLayout?.source !== positions || screenLayout.key !== key) screenLayout = { source: positions, key, positions: positions.map(project) };
+      const values = activity ? network.order.map(cell => activity(cell)) : [];
+      const colors = activity ? values.map(value => heat(value, scale)) : [];
+      if (territory && activity) colorField.paint(ctx, w, h, screenLayout.positions, colors, Math.max(nodeR * 2.8, Math.min(w, h) / Math.sqrt(n) * .8) * viewport.k, capture);
+      ctx.save(); ctx.translate(w / 2 + viewport.x * w, h / 2 + viewport.y * h); ctx.scale(viewport.k, viewport.k); ctx.translate(-w / 2, -h / 2);
       for (const { from, to, value } of edges) {
         const [x, y] = positions[from], [tx, ty] = positions[to], focus = selected === from || selected === to;
         const color = value > 0 ? "#147b63" : "#b75431", magnitude = Math.abs(value) / network.maxAbs;
@@ -582,8 +613,8 @@
         const [x, y] = positions[cell];
         const observedCell = observedSet.has(cell), active = selected === cell;
         const border = palette[network.group[cell] % palette.length];
-        const value = activity?.(cell);
-        ctx.fillStyle = activity ? heat(value, scale) : active ? ink : observedCell ? "#dcebe2" : "#fffefa";
+        const value = values[cell];
+        ctx.fillStyle = activity ? colors[cell] : active ? ink : observedCell ? "#dcebe2" : "#fffefa";
         ctx.strokeStyle = targets.has(cell) ? "#a74d2d" : border;
         ctx.lineWidth = active || targets.has(cell) || (activity && observedCell) ? 3 : 1.4;
         ctx.beginPath(); ctx.arc(x, y, nodeR, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
@@ -592,14 +623,15 @@
           ctx.fillText(cell + 1, x, y - (nodeR < 12 ? nodeR + 10 : 0));
         }
       }
-      return { positions, nodeR };
+      ctx.restore();
+      return { positions: screenLayout.positions, nodeR: nodeR * viewport.k };
     }, (event, geometry) => {
       if (event.type === "keydown") {
         if (!["ArrowLeft", "ArrowRight", "Enter"].includes(event.key)) return;
         event.preventDefault();
         select((selected === null ? 0 : (selected + (event.key === "ArrowLeft" ? -1 : 1) + n) % n), true);
       }
-      if (event.type !== "pointerdown") return;
+      if (interactive || event.type !== "pointerdown") return;
       const picked = geometry.positions.findIndex(([x, y]) => Math.hypot(x - event.offsetX, y - event.offsetY) <= geometry.nodeR + 6);
       if (picked !== -1) select(picked, true);
     });
@@ -607,22 +639,66 @@
       const { width, height } = frame.querySelector("canvas").getBoundingClientRect();
       return geometry(width, height).positions.map(([x, y]) => [x / width, y / height]);
     };
-    frame.setPositions = (target, animate = true) => {
-      cancelAnimationFrame(transition);
-      const from = frame.normalizedPositions();
+    frame.setPositions = target => {
       customPositions = target; layout = null;
-      const to = frame.normalizedPositions(), began = performance.now();
-      const duration = animate && !matchMedia("(prefers-reduced-motion: reduce)").matches ? 700 : 0;
-      const tick = now => {
-        const t = duration ? Math.max(0, Math.min(1, (now - began) / duration)) : 1, eased = t * t * (3 - 2 * t);
-        customPositions = t === 1 ? target : from.map(([x, y], i) => [x + (to[i][0] - x) * eased, y + (to[i][1] - y) * eased]);
-        layout = null; frame.refresh();
-        if (t < 1) transition = requestAnimationFrame(tick);
-      };
-      transition = requestAnimationFrame(tick);
+      frame.onViewChange?.(); frame.refresh();
     };
+    frame.setNodeSize = value => { nodeSize = value; frame.refresh(); };
+    frame.setTerritory = value => { territory = value; frame.refresh(); };
+    frame.cameraHome = () => {
+      if (!customPositions?.length) return { x: 0, y: 0 };
+      let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+      for (const [x, y] of customPositions) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y); }
+      return { x: .5 - (left + right) / 2, y: .5 - (top + bottom) / 2 };
+    };
+    frame.resetCamera = () => {
+      const home = frame.cameraHome();
+      viewport.k = 1; viewport.x = home.x; viewport.y = home.y;
+      frame.onViewChange?.(); frame.refresh();
+    };
+    const pointerEvents = new AbortController();
+    if (interactive) {
+      const canvas = frame.querySelector("canvas"); canvas.style.touchAction = "none";
+      let drag = null;
+      const local = event => { const r = canvas.getBoundingClientRect(); return [event.clientX - r.left, event.clientY - r.top, r.width, r.height]; };
+      canvas.addEventListener("wheel", event => {
+        event.preventDefault(); const [x, y, w, h] = local(event), previous = viewport.k;
+        viewport.k = Math.max(.25, Math.min(8, previous * Math.exp(-event.deltaY * .0015)));
+        viewport.x = (x - w / 2 - (x - w / 2 - viewport.x * w) * viewport.k / previous) / w;
+        viewport.y = (y - h / 2 - (y - h / 2 - viewport.y * h) * viewport.k / previous) / h;
+        frame.onViewChange?.(); frame.refresh();
+      }, { passive: false, signal: pointerEvents.signal });
+      canvas.addEventListener("pointerdown", event => {
+        if (event.button !== 0) return;
+        const [x, y, w, h] = local(event), g = geometry(w, h);
+        const wx = (x - w / 2 - viewport.x * w) / viewport.k + w / 2, wy = (y - h / 2 - viewport.y * h) / viewport.k + h / 2;
+        let id = -1, nearest = Infinity;
+        g.positions.forEach(([px, py], i) => { const d = Math.hypot(px - wx, py - wy); if (d <= g.nodeR * nodeSize + 6 / viewport.k && d < nearest) { id = i; nearest = d; } });
+        drag = { id, x, y, moved: false }; canvas.setPointerCapture(event.pointerId);
+      }, { signal: pointerEvents.signal });
+      canvas.addEventListener("pointermove", event => {
+        if (!drag) return;
+        const [x, y, w, h] = local(event), dx = x - drag.x, dy = y - drag.y;
+        if (!drag.moved && Math.hypot(dx, dy) < 3) return;
+        drag.moved = true;
+        if (drag.id < 0) { viewport.x += dx / w; viewport.y += dy / h; frame.onViewChange?.(); }
+        else {
+          const position = [((x - w / 2 - viewport.x * w) / viewport.k + w / 2) / w, ((y - h / 2 - viewport.y * h) / viewport.k + h / 2) / h];
+          const points = frame.normalizedPositions(); points[drag.id] = position; frame.setPositions(points); onMove?.(points); onDrag?.(drag.id, position, false);
+        }
+        drag.x = x; drag.y = y; frame.refresh();
+      }, { signal: pointerEvents.signal });
+      const release = event => {
+        if (!drag) return; const previous = drag; drag = null;
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+        if (previous.moved && previous.id >= 0) onDrag?.(previous.id, null, true);
+        else if (!previous.moved && previous.id >= 0 && event.type !== "pointercancel") select(previous.id, true);
+      };
+      canvas.addEventListener("pointerup", release, { signal: pointerEvents.signal });
+      canvas.addEventListener("pointercancel", release, { signal: pointerEvents.signal });
+    }
     const dispose = frame.dispose;
-    frame.dispose = () => { cancelAnimationFrame(transition); dispose(); };
+    frame.dispose = () => { pointerEvents.abort(); colorField?.dispose(); dispose(); };
     frame.edgeSummary = `Showing ${edges.length} of ${network.edges.length} connections across ${n} neurons. ` +
       (onlySelected ? "Only the selected neuron's connections are shown. " : dense ? "Overview keeps the strongest connections by absolute weight. " : "") +
       "Arrows point from source to target.";
@@ -636,8 +712,8 @@
     const ramp = document.createElement("div"); ramp.className = "color-legend-ramp";
     ramp.style.background = scale ? `linear-gradient(to top, ${heat(-scale, scale)}, ${heat(0, scale)} 50%, ${heat(scale, scale)})` : heat(0, scale);
     const ticks = document.createElement("div"); ticks.className = "color-legend-ticks";
-    for (const value of [center + scale, center, center - scale]) { const tick = document.createElement("span"); tick.textContent = number(value); ticks.append(tick); }
+    for (const value of [center + scale, center, center - scale]) { const tick = document.createElement("span"); tick.textContent = numericFormat(center - scale, center + scale)(value); ticks.append(tick); }
     legend.append(title, ramp, ticks); return legend;
   }
-  globalThis.NeuroViz = { palette, number, lines, activity, matrix, spectrum, graph, fieldsReadout, linkProbe, activityColor: heat, colorLegend };
+  globalThis.NeuroViz = { palette, number, numericFormat, lines, activity, matrix, spectrum, graph, fieldsReadout, linkProbe, activityColor: heat, colorLegend };
 })();

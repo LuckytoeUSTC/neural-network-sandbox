@@ -43,9 +43,9 @@
   <dt><strong>Feedforward propagation</strong></dt>
   <dd>12 个线性率神经元连成一条单向链。脉冲从 1 号沿链传递，每一级都按自身的时间常数整合上一级的输入。可比较响应峰沿链推迟、展宽的程度。与环预设相比，这里还改变了增益。单独研究回路的作用时，可把两个实验的 Gain 设为相同值。</dd>
   <dt><strong>Random rate network</strong></dt>
-  <dd>48 个 Tanh 神经元通过随机正、负权重连接。固定网络与噪声种子，改变 Gain，可以观察一个局部脉冲如何被反馈放大、衰减或传到其他神经元。</dd>
+  <dd>18 个 Tanh 神经元通过随机正、负权重连接。固定网络与噪声种子，改变 Gain，可以观察一个局部脉冲如何被反馈放大、衰减或传到其他神经元。</dd>
   <dt><strong>Low-rank network</strong></dt>
-  <dd>48 个 Tanh 神经元的连接含有两个秩一结构项和一个随机成分。1–8 号神经元同时受刺激。调整 Random bulk strength，再比较 Covariance 中的特征值，能观察群体波动如何分布到不同活动方向上。</dd>
+  <dd>18 个 Tanh 神经元的连接含有两个秩一结构项和一个随机成分。1–8 号神经元同时受刺激。调整 Random bulk strength，再比较 Covariance 中的特征值，能观察群体波动如何分布到不同活动方向上。</dd>
   <dt><strong>Clustered network</strong></dt>
   <dd>36 个 Sigmoid 神经元分成三个簇，簇内连接为正，默认簇间连接为负。刺激只到达第一簇的 1–5 号。若想在 Population 中比较三簇，先在 Recording 选择 Evenly spaced subset，使记录覆盖各簇，再选 By group。</dd>
   <dt><strong>Partial observation</strong></dt>
@@ -200,7 +200,10 @@
 <p><strong>Nodes</strong> 与 <strong>Connectivity matrix J</strong> 显示同一张完整网络。箭头从发送者指向接收者，绿色实线表示正权重，橙色虚线表示负权重。较密网络的 Overview 按权重绝对值显示较强的连接。要查看一个神经元的输入和输出，可选择它并将 Edges 切到 Selected neuron，再在 Incoming 和 Outgoing 表核对权重。</p>
 <p>在矩阵中，列是发送者、行是接收者。例如查看 \(1\to3\)，读第 3 行、第 1 列。率模型的矩阵元素是无量纲耦合强度，LIF 的绝对权重是一次到达事件引起的电导增量（nS）。协方差热图则度量共同波动，其中会包含间接通路和共享输入的影响。</p>
 <p>Nodes 的 Recording 或 Structure 显示网络结构，橙色边框标出刺激目标。改选 Baseline、Stimulus 或 Difference 后，节点颜色随时间显示原神经元的活动。同一条件在整段记录中使用固定色标。放大 Nodes 可拖动时间轴并读取表中各神经元的值。投影模式下，表中给出全网原神经元的活动，各通道的具体权重见导出的读出矩阵。</p>
-<p>全屏中点击 Relax layout by connection strength 可切换到力导向布局。节点相互排斥，连接按权重绝对值提供吸引，并以原布局为位置参考。位置仅用于绘图。播放速度默认为 1.0×，即模拟中的 1000 ms 对应现实中的 1 秒，可在 0.02× 至 10× 之间调整；X／C 减速或加速，步长随速度区间变化：0.02–0.1 为 0.02，0.1–0.3 为 0.05，0.3–3 为 0.1，3–10 为 1。拖动时间轴可停在某一帧，比较该时刻各神经元的活动。</p>
+<p>Nodes 默认采用 Preset layout（预设布局）：环形、链式或分组排列由网络类型决定，方便对照神经元编号和连接结构。全屏中可以拖动单个节点；拖动后出现的 Restore preset layout 按钮将节点放回原位。</p>
+<p>Spring layout（弹簧布局）让排列随连接结构调整。可以把连接想成连接节点的弹簧：权重绝对值越大，拉近两端的作用越强；节点之间还有排斥作用，避免全部挤在一起。原来的排列提供较弱的位置约束，使调整后的图仍便于和原图对照。节点沿运动轨迹逐渐稳定，而不是直接切换到一组新坐标。拖动节点会改变周围节点的受力，松手后继续调整。F5、F9 重新计算后保留弹簧模式，从预设布局重新开始调整。</p>
+<p>滚轮以鼠标所在位置为中心缩放，拖动空白处平移。视角改变后，画布右上角出现 Reset view，点击恢复原始缩放，并按当前节点分布的外接矩形中心居中，保留当前排列。预设布局的节点位置不受画布边界限制，可以通过缩放、平移继续向外布置。Node size 控制节点大小。Territory 在每个节点附近铺开一块有界的活动色彩，色块内部保留主色，外轮廓圆润，交叠处形成较窄的颜色过渡。轮廓由附近节点的局部影响叠加形成，颜色混合按距离加权，区域大小随节点大小和画面密度调整。这层背景帮助观察整体变化；读取单个神经元的活动值时，看节点颜色和数据表。</p>
+<p>播放速度默认为 1.0×，即模拟中的 1000 ms 对应现实中的 1 秒，可在 0.02× 至 10× 之间调整。Space 播放或暂停，D／F 暂停并前后移动一个保存的采样帧；这些快捷键也适用于普通 Nodes 和 Connectivity 比较视图。X／C 减速或加速，步长随速度区间变化：0.02–0.1 为 0.02，0.1–0.3 为 0.05，0.3–3 为 0.1，3–10 为 1。编辑输入框或选择框时保留控件自身的键盘操作。全屏时间轴可以直接定位到某一帧。</p>
 `,
       compare: String.raw`
 <p>在一次已完成实验的 Traces 或 Connectivity 中点击图钉，保留它的配置、网络、读出和轨迹作为 Reference。更改参数并运行，或更换同次实验的读出，再打开 Compare。左边是固定的 Reference，右边是最新完成的 Current。下方 Configuration changes 列出有变化的设置和读出编号。</p>
@@ -238,9 +241,9 @@
   <dt><strong>Feedforward propagation</strong></dt>
   <dd>Twelve linear rate neurons form a one-way chain. At each stage the neuron integrates its upstream input over its own time constant. Compare how the pulse peaks later and spreads in time along the chain. This preset also changes the gain from the ring preset. Set Gain to the same value in both runs to isolate the effect of closing the loop.</dd>
   <dt><strong>Random rate network</strong></dt>
-  <dd>Random positive and negative connections couple 48 Tanh neurons. Hold the network and noise seeds fixed and vary Gain to see how feedback amplifies, attenuates or redistributes a local pulse.</dd>
+  <dd>Random positive and negative connections couple 18 Tanh neurons. Hold the network and noise seeds fixed and vary Gain to see how feedback amplifies, attenuates or redistributes a local pulse.</dd>
   <dt><strong>Low-rank network</strong></dt>
-  <dd>The connections among 48 Tanh neurons contain two rank-one terms and a random component. Neurons 1–8 receive the same pulse. Changing Random bulk strength and comparing covariance eigenvalues shows how population variance is distributed across activity directions.</dd>
+  <dd>The connections among 18 Tanh neurons contain two rank-one terms and a random component. Neurons 1–8 receive the same pulse. Changing Random bulk strength and comparing covariance eigenvalues shows how population variance is distributed across activity directions.</dd>
   <dt><strong>Clustered network</strong></dt>
   <dd>Thirty-six Sigmoid neurons form three clusters with positive connections within clusters and negative connections between them. The stimulus targets neurons 1–5 in the first cluster. To show all three groups in Population, select Evenly spaced subset in Recording, then choose By group.</dd>
   <dt><strong>Partial observation</strong></dt>
@@ -395,7 +398,10 @@
 <p><strong>Nodes</strong> and <strong>Connectivity matrix J</strong> show the full network. Arrows point from source to target. Positive weights appear as solid green lines and negative weights as dashed orange lines. In dense networks, Overview displays the strongest connections by absolute weight. Select a neuron and switch Edges to Selected neuron to inspect its inputs and outputs. The Incoming and Outgoing tables give their weights.</p>
 <p>In the matrix, columns are sources and rows are targets. To find \(1\to3\), read row 3, column 1. A rate-model weight is a dimensionless coupling strength. In LIF, its magnitude is the conductance increment per arriving spike in nS. The covariance heatmap measures co-fluctuations, which can also arise from indirect pathways or shared inputs.</p>
 <p>In Nodes, Recording or Structure shows the wiring. Orange borders mark stimulus targets. Select Baseline, Stimulus or Difference to color the original neurons by their activity at each time. A condition's color scale is fixed across the recording. Expand Nodes to scrub the timeline and read individual neuronal values. With projected recording, the table shows the underlying full-network neurons. Each channel's coefficients are available in the exported readout matrix.</p>
-<p>In the expanded view, Relax layout by connection strength switches to a force-directed layout. It combines repulsion between nodes, attraction based on absolute connection weight and an anchor to the original layout. The resulting coordinates position the nodes on screen. At the default 1.0× speed, 1000 ms of simulated time takes one second to play. Speed ranges from 0.02× to 10×. X/C decreases or increases speed, using steps of 0.02 below 0.1, 0.05 from 0.1 to 0.3, 0.1 from 0.3 to 3, and 1 above 3. Scrub the timeline to compare individual neuronal values at a particular frame.</p>
+<p>Nodes starts in Preset layout: a ring, chain, or grouped arrangement chosen for the network topology. This makes it easier to relate neuron IDs to the connections. In full screen, you can drag individual nodes. Restore preset layout appears after a node is moved and returns the nodes to their initial positions.</p>
+<p>Spring layout adjusts positions to reflect connectivity. Imagine each connection as a spring: a larger absolute weight produces a stronger attraction between its endpoints. Repulsion keeps nodes apart, while a weaker pull toward the initial arrangement helps preserve orientation. Nodes follow a relaxation trajectory toward a stable arrangement. Dragging a node changes the forces on its neighbors; adjustment continues after release. F5 and F9 retain Spring layout and restart relaxation from the preset arrangement after recalculation.</p>
+<p>Scroll to zoom around the pointer and drag empty space to pan. Reset view appears in the upper-right corner of the plot after the view changes; it restores the original zoom and centers the bounding box of the current nodes without rearranging them. In Preset layout, node positions are not restricted to the visible canvas; zoom and pan to arrange nodes beyond the initial view. Node size controls the node radius. Territory spreads a bounded patch of activity color around each node, with rounded outer boundaries, distinct interior colors, and narrow, distance-weighted transitions where patches overlap. Nearby nodes jointly shape the outline. Patch size follows node size and display density. Use the background to follow patterns across the network, and the node colors and table to read individual activity values.</p>
+<p>At the default 1.0× speed, 1000 ms of simulated time takes one second to play. Speed ranges from 0.02× to 10×. Space plays or pauses; D/F pauses and moves backward or forward by one saved sample. These shortcuts also work in the ordinary Nodes view and Connectivity comparisons. X/C adjusts speed in steps of 0.02 below 0.1, 0.05 from 0.1 to 0.3, 0.1 from 0.3 to 3, and 1 above 3. Inputs and selectors retain their normal keyboard behavior while focused. The full-screen timeline lets you seek directly to a frame.</p>
 `,
       compare: String.raw`
 <p>After a run completes, use the pin in Traces or Connectivity to save the configuration, network, readout and trajectories as the Reference. Run a modified configuration or change the readout of the existing record, then open Compare. The left panel shows the pinned Reference and the right shows the latest completed Current result. Configuration changes lists the settings and readout IDs that differ.</p>

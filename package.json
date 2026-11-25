@@ -1,6 +1,6 @@
 {
   "name": "neural-network-sandbox",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Offline neuroscience network sandbox",
   "scripts": {
@@ -8,7 +8,9 @@
     "test:release": "node tests/verify-release.cjs"
   },
   "devDependencies": {
-    "playwright": "1.62.1"
+    "clean-css": "5.3.3",
+    "playwright": "1.62.1",
+    "terser": "5.51.4"
   },
   "license": "MIT"
 }
